@@ -135,18 +135,22 @@ method value `RUNOFF_SOURCE="vsa_opm"` and the `vsa_opm` pipeline stage are
 - `hydroflow/` — the pip-installable model package (formerly `vsa_opm`)
   - `core/` — the science (QGIS-free)
     - `routing/` — `terrain.py` (D8/slopes/topological order), `hydraulics.py`
-      (Manning + diffusive-wave kernels), `surface.py` (Manning's n, channel
-      geometry, impervious), `router.py` (the time loop), `reporting.py`
-      (hydrograph/mass balance), `gpu.py` (CuPy variants)
+      (Manning + diffusive-wave + Muskingum–Cunge kernels), `surface.py`
+      (Manning's n, channel geometry, impervious), `router.py` (the time loop),
+      `reporting.py` (hydrograph/mass balance), `boundary.py` (inflow BC),
+      `gauges.py` (virtual gauges), `fields.py` (per-cell field archive),
+      `gpu.py` (CuPy variants)
     - `runoff/` — `engine.py` (RunoffEngine dispatcher), `vsa.py` (VSA-OPM /
       Green-Ampt / impervious mechanics), `soil.py` (SD_max/phi/suction
       resolution), `gpu.py`
     - `precip/` — `engine.py` (uniform/Thiessen/IDW/IMERG), `gpu.py`
     - `dem_processing.py` — watershed preprocessing (pysheds)
     - `opm.py` — standalone OPM runner; `io_utils.py` — shared raster helpers
-  - `gee/` — Earth Engine integrations (`auth.py`, `serves_gee.py`, `imerg_gee.py`)
-  - `cli/` — the `vsa-opm` command-line interface
-  - `config.py` — `OpmConfig`, the single configuration object
+  - `gee/` — Earth Engine integrations (`auth.py`, `serves_gee.py`,
+    `imerg_gee.py`, `dem_gee.py`)
+  - `cli/` — the `hydroflow` command-line interface (`vsa-opm` alias)
+  - `config.py` — `Config` (aliased `OpmConfig`), the single configuration object
+  - `_compat.py` — back-compat shim mapping `vsa_opm` imports to `hydroflow`
   - `pipeline.py` — stage orchestration shared by API, CLI and plugin
 - `config.py` — legacy research-scenario settings used by `tools/` and `tests/`
 - `configs/` — example CLI config files

@@ -88,7 +88,9 @@ Thumbs.db
 # GIS
 
 # Claude
-CLAUDE.md
+#   CLAUDE.md is intentionally TRACKED (shared project guidance for
+#   collaborators and coding agents); only the local session/agent dirs
+#   (.claude/, .codex, .agents) stay ignored above.
 
 # Plugin build artifacts
 #   vsa_opm/            = the pip-installable core package (tracked source)
