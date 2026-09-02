@@ -94,7 +94,7 @@ def run_single_mechanism(mech: str):
     config.IMPERVIOUS_SOURCE = 'none'
     config.RUN_TAG            = f"{EVENT}_{mech}alone"
 
-    from vsa_opm.core.routing import router as kwr
+    from hydroflow.core.routing import router as kwr
     print(f"\n=== {mech.upper()}-ONLY (independent run) ===")
     grid_data = kwr.initialise_grid(config)
     runoff_engine = grid_data["runoff_engine"]

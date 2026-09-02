@@ -288,8 +288,8 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
 
         ensure_core()
 
-        from vsa_opm.config import OpmConfig
-        from vsa_opm.core.routing import router as kwr
+        from hydroflow.config import OpmConfig
+        from hydroflow.core.routing import router as kwr
 
         # ── Build config ──────────────────────────────────────────────────────
         cfg = OpmConfig()

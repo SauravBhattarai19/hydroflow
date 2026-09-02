@@ -17,7 +17,7 @@ current choices are shown:
 Note: "Horton (Green-Ampt)" (whether Horton's own runoff is reported) and
 "Cap sandbox recharge by infiltration" (whether the VSA sandbox's water
 balance respects infiltration physics) are independent toggles — see
-vsa_opm/core/runoff/vsa.py and OPM_INFILTRATION's docstring in config.py.
+hydroflow/core/runoff/vsa.py and OPM_INFILTRATION's docstring in config.py.
 """
 
 from qgis.PyQt.QtWidgets import (

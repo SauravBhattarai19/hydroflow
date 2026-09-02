@@ -54,8 +54,6 @@ gee = ["earthengine-api"]
 
 [project.scripts]
 hydroflow = "hydroflow.cli.main:main"
-# Legacy alias — kept so existing invocations keep working after the rename.
-vsa-opm = "hydroflow.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model"
@@ -63,8 +61,7 @@ Documentation = "https://sauravbhattarai19.github.io/One-Parameter-Hydrologic-Mo
 Issues = "https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model/issues"
 
 [tool.setuptools.packages.find]
-# hydroflow* = the model package; vsa_opm = the deprecated back-compat shim.
-include = ["hydroflow*", "vsa_opm*"]
+include = ["hydroflow*"]
 
 [tool.setuptools.package-data]
 hydroflow = ["data/*.csv"]

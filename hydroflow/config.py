@@ -25,7 +25,7 @@ Usage
     # or from a config file (YAML / JSON / legacy python module):
     cfg = Config.from_file("config.yaml")
 
-``OpmConfig`` remains as a backward-compatible alias of ``Config``.
+``OpmConfig`` is available as an alias of ``Config``.
 """
 
 import json
@@ -124,7 +124,7 @@ class Config:
     Fixed-choice options (see ``_ENUM_CHOICES``) accept either their string
     value or an integer code and are normalised to the canonical string on
     assignment, so ``Config(BACKEND=1)`` and ``Config(BACKEND="gpu")`` are
-    identical.  ``OpmConfig`` is a backward-compatible alias of this class.
+    identical.  ``OpmConfig`` is an alias of this class.
     """
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -604,8 +604,7 @@ class Config:
         return f"Config({items})"
 
 
-# ── Backward-compatible alias ────────────────────────────────────────────────
-# The class used to be called OpmConfig; keep the old name working so existing
-# code (`from hydroflow import OpmConfig`, the QGIS bridge, tools/, tests/) is
-# unaffected by the rename.
+# ── Alias ────────────────────────────────────────────────────────────────────
+# `OpmConfig` is a convenience alias of `Config` (the VSA-OPM heritage name),
+# used by the QGIS bridge and some tools/tests.  Prefer `Config` in new code.
 OpmConfig = Config

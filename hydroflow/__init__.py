@@ -26,8 +26,7 @@ Quick start
     cfg.update_output_paths()
     results = run_pipeline(cfg, stages=("process_dem", "routing"))
 
-``Config`` is the canonical configuration object; ``OpmConfig`` is kept as a
-backward-compatible alias, and ``import vsa_opm`` still works (deprecated).
+``Config`` is the canonical configuration object; ``OpmConfig`` is an alias.
 """
 
 __version__ = "0.1.0"

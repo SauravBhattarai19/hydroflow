@@ -238,7 +238,7 @@ def plot_sdmax_polygons(dem_masked, ws, transform):
 
     if not DEFICIT_PATH.exists():
         print("    Downloading deficit raster from GEE ...")
-        from vsa_opm.gee.serves_gee import download_deficit_raster
+        from hydroflow.gee.serves_gee import download_deficit_raster
         result = download_deficit_raster(
             dem_path=str(DEM_PATH),
             watershed_geojson_path=str(WS_JSON),
@@ -486,7 +486,7 @@ def _make_frame(ax_map, ax_rain, ax_at,
 
 def plot_vsa_gif(dem_masked, ws, transform):
     print("  Generating VSA propagation GIF ...")
-    from vsa_opm.core.routing import router as kwr
+    from hydroflow.core.routing import router as kwr
     from PIL import Image
     import io
 
@@ -496,7 +496,7 @@ def plot_vsa_gif(dem_masked, ws, transform):
     orig_date    = getattr(config, 'SERVES_TARGET_DATE', None)
     # The GIF runs the full simulation; the per-step VSA update dominates, so use
     # the GPU when available (≈30× faster for a 96 h run).  Falls back to CPU.
-    from vsa_opm.utils import gpu_utils
+    from hydroflow.utils import gpu_utils
     config.BACKEND = 'gpu' if gpu_utils.cupy_available() else 'cpu'
     print(f"    backend: {config.BACKEND}")
     if EVENT_DATE:

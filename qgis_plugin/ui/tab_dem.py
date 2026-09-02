@@ -72,7 +72,7 @@ class TabDem(QWidget):
         form_dem.addRow("Target CRS:", self.crs_widget)
 
         self.engine_combo = QComboBox()
-        # (display label, underlying vsa_opm.config.OpmConfig.DELINEATION_ENGINE value)
+        # (display label, underlying hydroflow.config.OpmConfig.DELINEATION_ENGINE value)
         self._ENGINE_CHOICES = [
             ("pyflwdir  (recommended)", "pyflwdir"),
             ("pysheds  (legacy)", "pysheds"),

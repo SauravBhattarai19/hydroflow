@@ -36,7 +36,7 @@ def _cupy_available() -> bool:
     try:
         from ..bridge import ensure_core
         ensure_core()
-        from vsa_opm.utils import gpu_utils
+        from hydroflow.utils import gpu_utils
         return gpu_utils.cupy_available()
     except Exception:  # noqa: BLE001
         return False

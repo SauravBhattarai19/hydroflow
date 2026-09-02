@@ -30,8 +30,8 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
-from vsa_opm.core import routing as ru
-from vsa_opm.core.precip import PrecipEngine
+from hydroflow.core import routing as ru
+from hydroflow.core.precip import PrecipEngine
 
 # ── OPM constants (mirrors runoff_input.py) ───────────────────────────────────
 SD_MIN = 0.001
@@ -245,7 +245,7 @@ def test_backward_compatibility():
     """RUNOFF_SOURCE='none' must leave source_1d == rain_1d (no change to routing)."""
     name = "5 · Backward compatibility (RUNOFF_SOURCE='none')"
     try:
-        from vsa_opm.core import runoff as ri
+        from hydroflow.core import runoff as ri
 
         class _DummyCfg:
             RUNOFF_SOURCE = 'none'
@@ -354,7 +354,7 @@ def test_qmax_validation():
     """OPM_Q_MAX ≤ Q_min must raise ValueError before any computation."""
     name = "7 · Q_max validation (raises ValueError for bad input)"
     try:
-        from vsa_opm.core import runoff as ri
+        from hydroflow.core import runoff as ri
 
         class _BadCfg:
             RUNOFF_SOURCE       = 'vsa_opm'

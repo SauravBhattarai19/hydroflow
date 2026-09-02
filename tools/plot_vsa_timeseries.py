@@ -60,7 +60,7 @@ def main():
     config.EVENT_START_UTC        = row.start_utc
     config.RUN_TAG                = EVENT
 
-    from vsa_opm.core.routing import router as kwr
+    from hydroflow.core.routing import router as kwr
     grid_data = kwr.initialise_grid(config)
     runoff_engine = grid_data["runoff_engine"]
     precip_engine = grid_data["precip_engine"]

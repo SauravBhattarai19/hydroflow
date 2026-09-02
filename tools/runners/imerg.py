@@ -69,7 +69,7 @@ def apply_event(config, start_local, end_local, sim_hours, tag):
 
 
 def run_router_imerg(config):
-    from vsa_opm.core.routing import router as kwr
+    from hydroflow.core.routing import router as kwr
     t0 = time.perf_counter()
     grid_data = kwr.initialise_grid(config)
     t_init = time.perf_counter() - t0
@@ -84,7 +84,7 @@ def run_router_imerg(config):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def run():
-    from vsa_opm.utils import gpu_utils
+    from hydroflow.utils import gpu_utils
     if not gpu_utils.cupy_available():
         print("[ERROR] CuPy not available — this pipeline requires a GPU.")
         sys.exit(1)

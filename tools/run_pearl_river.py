@@ -41,8 +41,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 os.chdir(REPO_ROOT)
 sys.path.insert(0, str(REPO_ROOT))
 
-from vsa_opm import OpmConfig, run_pipeline
-from vsa_opm.gee.dem_gee import download_dem
+from hydroflow import OpmConfig, run_pipeline
+from hydroflow.gee.dem_gee import download_dem
 
 # ── Basin-specific constants (see docs/plan for sourcing) ────────────────────
 GEE_PROJECT = 'ee-sauravbhattarai1999'

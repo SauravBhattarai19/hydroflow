@@ -6,11 +6,6 @@ explicit kinematic / diffusive-wave / Muskingum–Cunge channel routing — driv
 data (SERVES soil moisture, IMERG precipitation, SoilGrids, LULC/LCZ) via
 Google Earth Engine.
 
-> **Renamed:** this package used to be `vsa_opm`. It is now **`hydroflow`**
-> (`pip install hydroflow`, `import hydroflow`). `import vsa_opm` and the
-> `OpmConfig` class still work as deprecated aliases — see
-> [Migrating from `vsa_opm`](#migrating-from-vsa_opm).
-
 ## 📖 Learn the model — interactive course
 
 **[sauravbhattarai19.github.io/One-Parameter-Hydrologic-Model](https://sauravbhattarai19.github.io/One-Parameter-Hydrologic-Model/)**
@@ -109,30 +104,13 @@ scenario's `OUTPUT_DIR`.  Optional Earth Engine integration
 [`hydroflow/gee/serves_gee.py`](hydroflow/gee/serves_gee.py) and `test_ee_auth.sh`
 for setup/verification.
 
-## Migrating from `vsa_opm`
-
-The package was renamed `vsa_opm` → `hydroflow`. Nothing in the modelling
-science changed; only names moved. Existing code keeps working via shims:
-
-```python
-import vsa_opm                       # still works (emits a DeprecationWarning)
-from vsa_opm import OpmConfig        # OpmConfig is an alias of Config
-from vsa_opm.core.routing import router
-```
-
-Recommended new imports:
-
-```python
-from hydroflow import Config, run_pipeline   # Config == the old OpmConfig
-```
-
-The `vsa-opm` console command is kept as an alias of `hydroflow`. The runoff
-method value `RUNOFF_SOURCE="vsa_opm"` and the `vsa_opm` pipeline stage are
-**unchanged** — those name the Pradhan & Ogden (2010) scheme, not the package.
+> Note: the runoff-method value `RUNOFF_SOURCE="vsa_opm"` and the `vsa_opm`
+> pipeline stage name the Pradhan & Ogden (2010) VSA-OPM scheme (the science),
+> not the package — they are unrelated to the package name.
 
 ## Repository layout
 
-- `hydroflow/` — the pip-installable model package (formerly `vsa_opm`)
+- `hydroflow/` — the pip-installable model package
   - `core/` — the science (QGIS-free)
     - `routing/` — `terrain.py` (D8/slopes/topological order), `hydraulics.py`
       (Manning + diffusive-wave + Muskingum–Cunge kernels), `surface.py`
@@ -148,13 +126,12 @@ method value `RUNOFF_SOURCE="vsa_opm"` and the `vsa_opm` pipeline stage are
     - `opm.py` — standalone OPM runner; `io_utils.py` — shared raster helpers
   - `gee/` — Earth Engine integrations (`auth.py`, `serves_gee.py`,
     `imerg_gee.py`, `dem_gee.py`)
-  - `cli/` — the `hydroflow` command-line interface (`vsa-opm` alias)
+  - `cli/` — the `hydroflow` command-line interface
   - `config.py` — `Config` (aliased `OpmConfig`), the single configuration object
-  - `_compat.py` — back-compat shim mapping `vsa_opm` imports to `hydroflow`
   - `pipeline.py` — stage orchestration shared by API, CLI and plugin
 - `config.py` — legacy research-scenario settings used by `tools/` and `tests/`
 - `configs/` — example CLI config files
 - `tools/` — batch runners, sensitivity/OFAT sweeps, experiment combinations
 - `study/` — source for the interactive course site above
 - `docs/` — LaTeX lecture notes companion to the course
-- `qgis_plugin/` — QGIS front-end (UI + QThread worker importing `vsa_opm`)
+- `qgis_plugin/` — QGIS front-end (UI + QThread worker importing `hydroflow`)

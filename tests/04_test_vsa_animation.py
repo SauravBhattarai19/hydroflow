@@ -41,8 +41,8 @@ import rasterio
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
-from vsa_opm.core import routing as ru
-from vsa_opm.core import runoff as ri
+from hydroflow.core import routing as ru
+from hydroflow.core import runoff as ri
 
 # ── Constants ────────────────────────────────────────────────────────────────
 K_MS   = 44.0 / 86400.0
@@ -86,7 +86,7 @@ faccum_1d = faccum[s_rows, s_cols].astype(np.float64)
 # ─────────────────────────────────────────────────────────────────────────────
 # 2.  Build precipitation engine
 # ─────────────────────────────────────────────────────────────────────────────
-from vsa_opm.core.precip import PrecipEngine
+from hydroflow.core.precip import PrecipEngine
 grid_data_pe = {
     "s_rows": s_rows, "s_cols": s_cols,
     "nrows": nrows,   "ncols": ncols,

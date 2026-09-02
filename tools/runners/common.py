@@ -70,7 +70,7 @@ def run_process_dem(config, out_dir, skip_if_exists=False) -> float:
     if skip_if_exists and all(os.path.exists(p) for p in needed):
         print("  [process_dem] watershed rasters already present — skipping.")
         return 0.0
-    from vsa_opm.core import dem_processing as process_dem
+    from hydroflow.core import dem_processing as process_dem
     t0 = time.perf_counter()
     process_dem.main(config)
     return time.perf_counter() - t0

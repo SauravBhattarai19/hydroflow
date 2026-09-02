@@ -44,7 +44,7 @@ from ..bridge import ensure_core
 
 
 class ProcessDemAlgorithm(QgsProcessingAlgorithm):
-    """QGIS Processing wrapper for vsa_opm.core.process_dem.main()."""
+    """QGIS Processing wrapper for hydroflow.core.process_dem.main()."""
 
     # Parameter IDs
     INPUT_DEM = "INPUT_DEM"
@@ -54,7 +54,7 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
     OUTLET_LON = "OUTLET_LON"
     OUTPUT_DIR = "OUTPUT_DIR"
 
-    # Literal vsa_opm.config.OpmConfig.DELINEATION_ENGINE values, in dropdown
+    # Literal hydroflow.config.OpmConfig.DELINEATION_ENGINE values, in dropdown
     # order — index 0 (pyflwdir) is the default, matching the interactive
     # Tab-1 dialog (see qgis_plugin/ui/tab_dem.py).  pyflwdir (priority-flood
     # fill) correctly routes flow across large flat reservoirs/lakes that can
@@ -137,8 +137,8 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
 
         ensure_core()
 
-        from vsa_opm.config import OpmConfig
-        from vsa_opm.core import dem_processing as pd_mod
+        from hydroflow.config import OpmConfig
+        from hydroflow.core import dem_processing as pd_mod
 
         # Build config
         dem_layer = self.parameterAsRasterLayer(parameters, self.INPUT_DEM, context)

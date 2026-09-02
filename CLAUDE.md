@@ -12,8 +12,11 @@ routing. Optional Google Earth Engine forcing (IMERG rainfall, SERVES soil
 deficit, SoilGrids, LULC/LCZ). The science is pure NumPy/SciPy/rasterio — no
 QGIS, no Qt in `hydroflow/core/`.
 
-The pip package is **`hydroflow`** (`import hydroflow`). It was renamed from
-`vsa_opm` — see "Naming & back-compat" below; the old names still work.
+The pip package is **`hydroflow`** (`import hydroflow`). The config class is
+`Config` (with `OpmConfig` as a plain alias). Note the runoff-method value
+`RUNOFF_SOURCE="vsa_opm"`, the `vsa_opm` pipeline stage, and
+`runoff_engine._mode == 'vsa_opm'` name the Pradhan & Ogden VSA-OPM *science*,
+not the package — leave them as-is.
 
 ## Current focus
 
@@ -28,26 +31,6 @@ Out of scope: `runs/trishuli_*`, `runs/trishuli_avaflow*`, and any
 `r.avaflow`/GLOF/debris-flow material (e.g. `plan.md` at repo root) — that is
 an unrelated study that happens to share this workspace, not part of the
 `hydroflow` package.
-
-## Naming & back-compat (the vsa_opm → hydroflow rename)
-
-The package was renamed `vsa_opm` → **`hydroflow`** (v0.1.0). Nothing in the
-science changed; only names moved:
-
-- Import package is now `hydroflow/` (was `vsa_opm/`). Internal imports are all
-  relative, so the rename was a directory move.
-- The config class is now **`Config`** (was `OpmConfig`); `OpmConfig` is kept as
-  an alias.
-- A shim keeps old imports alive: `import vsa_opm`, `from vsa_opm.core… import …`
-  and `OpmConfig` still work (with a `DeprecationWarning`), via
-  `hydroflow/_compat.py` (a `sys.meta_path` finder) + a thin `vsa_opm/` shim
-  package. Prefer `hydroflow` in new code.
-- **Unchanged on purpose** (these name the science, not the package): the
-  `RUNOFF_SOURCE="vsa_opm"` value, the `vsa_opm` pipeline stage, and
-  `runoff_engine._mode == 'vsa_opm'`.
-- The QGIS plugin still imports `vsa_opm` and vendors `_vendor/vsa_opm`; it keeps
-  working through the shim. Re-vendoring the plugin under the new name is a
-  pending follow-up.
 
 ## Install & environment
 
@@ -71,7 +54,6 @@ same attributes) through `hydroflow.pipeline.run_pipeline`:
   `hydroflow run -c run.yaml [--stages process_dem routing] [--backend cpu|gpu]`.
   `hydroflow list-options` prints every fixed-choice option and its integer code.
   Config files may be `.yaml`, `.json`, or a legacy flat `.py` settings module.
-  (`vsa-opm` is kept as an alias of the `hydroflow` command.)
 - **QGIS plugin** (`qgis_plugin/`): a 5-tab dialog + Processing algorithms that
   build a `Config` and call the same pipeline in a `QThread`.
 
@@ -190,14 +172,14 @@ local DEM yet.
   `hydroflow/config.py::Config`. Both are loadable by the CLI.
 - `study/` is a separate Next.js MDX interactive textbook (the public course
   site); `docs/` is the LaTeX companion. They are documentation, not the model.
-- The plugin still ships a vendored copy of the core package under
-  `_vendor/vsa_opm/` (pre-rename name) and imports `vsa_opm`; it works via the
-  shim. `bridge.ensure_core()` puts the repo-root package on `sys.path` in
-  dev/symlink mode. Rebuild with `./build_windows_plugin.sh`. Re-vendoring the
-  plugin as `hydroflow` is a pending follow-up.
+- The plugin **source** (`qgis_plugin/`) imports `hydroflow`;
+  `bridge.ensure_core()` finds it pip-installed, in `_vendor/hydroflow`, or in
+  the repo root (dev symlink). Rebuild the shipped zip with
+  `./build_windows_plugin.sh`. The already-built `_plugin_build/` zip is a
+  frozen artifact still on the old `vsa_opm` name — regenerate it to pick up the
+  rename (pending follow-up).
 - Land-cover lookups (`lulc_lookup.csv`, `lcz_lookup.csv`) ship inside the
   package at `hydroflow/data/` and are the config defaults.
-- Packaging lives in `pyproject.toml` (`hydroflow` dist, `hydroflow`/`vsa-opm`
-  console scripts, `[gpu]`/`[gee]` extras), plus `LICENSE` (MIT) and
-  `MANIFEST.in`. Build with `python -m build`; `v0.1.0` is tagged and on
-  TestPyPI (real PyPI upload deferred).
+- Packaging lives in `pyproject.toml` (`hydroflow` dist, `hydroflow` console
+  script, `[gpu]`/`[gee]` extras), plus `LICENSE` (MIT) and `MANIFEST.in`.
+  Build with `python -m build`; `v0.1.0` is tagged (real PyPI upload pending).

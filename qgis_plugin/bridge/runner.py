@@ -31,7 +31,7 @@ gets the VRAM back.  This is idempotent when CuPy is not installed.
 
 Core resolution
 ---------------
-All science lives in the pip-installable ``vsa_opm`` package;
+All science lives in the pip-installable ``hydroflow`` package;
 bridge.ensure_core() makes it importable (pip install, vendored copy in
 the plugin zip, or the development checkout next to a symlinked plugin).
 """
@@ -91,7 +91,7 @@ class OpmWorker(QThread):
         Which pipeline stages to run.  Options (in order):
             'process_dem'  – DEM preprocessing (process_dem.main)
             'routing'      – kinematic-wave routing (initialise_grid + run_time_loop)
-            'vsa_opm'      – standalone OPM run (vsa_opm.run_opm)
+            'vsa_opm'      – standalone OPM run (hydroflow.run_opm)
         Default: ['process_dem', 'routing']
     """
 
@@ -142,8 +142,8 @@ class OpmWorker(QThread):
     # ── Pipeline stages ───────────────────────────────────────────────────────
 
     def _run_pipeline(self):
-        """Delegate to the Qt-free core pipeline (vsa_opm.pipeline)."""
-        from vsa_opm.pipeline import run_pipeline
+        """Delegate to the Qt-free core pipeline (hydroflow.pipeline)."""
+        from hydroflow.pipeline import run_pipeline
 
         self._result = run_pipeline(
             self._cfg,
@@ -203,7 +203,7 @@ class DemStepWorker(QThread):
         original_stdout = sys.stdout
         sys.stdout = _StdoutCapture(self.log)
         try:
-            from vsa_opm.core import dem_processing as dp
+            from hydroflow.core import dem_processing as dp
 
             engine = self._params.get("engine", "pysheds")
             if self._task == "analyze_terrain":

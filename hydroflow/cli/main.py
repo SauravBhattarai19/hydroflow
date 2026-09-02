@@ -21,8 +21,6 @@ Commands
     hydroflow list-options
         Print every fixed-choice option with its integer codes (each option
         accepts the string or the code, e.g. PRECIP_METHOD: uniform ≡ 0).
-
-The legacy ``vsa-opm`` command remains as an alias of ``hydroflow``.
 """
 
 import argparse

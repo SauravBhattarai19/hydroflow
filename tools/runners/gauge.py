@@ -45,7 +45,7 @@ from .common import (
 def run_router(config, gauge_csv: Path, ts_csv: Path, sim_hours: float,
                event_start_local=None) -> tuple:
     """Run the kinematic-wave router for one event. Returns (hydrograph, t_init, t_loop)."""
-    from vsa_opm.core.routing import router as kwr
+    from hydroflow.core.routing import router as kwr
 
     config.PRECIP_METHOD               = PRECIP_METHOD
     config.PRECIP_GAUGE_FILE           = str(gauge_csv.relative_to(REPO_ROOT))
@@ -86,7 +86,7 @@ def run(output_dir=None, overrides=None, skip_process_dem=False):
     skip_process_dem : bool — reuse pre-seeded watershed rasters instead of
                        re-deriving them (see common.run_process_dem).
     """
-    from vsa_opm.utils import gpu_utils
+    from hydroflow.utils import gpu_utils
     import config
 
     # ONE folder for everything (overrides config.OUTPUT_DIR, cascades all paths).

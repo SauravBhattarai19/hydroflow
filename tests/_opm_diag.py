@@ -50,7 +50,7 @@ def resolve_precip(cfg=config):
     event_date = getattr(cfg, 'SERVES_TARGET_DATE', None)
 
     if method.startswith('imerg'):
-        from vsa_opm.gee.imerg_gee import ensure_imerg_data
+        from hydroflow.gee.imerg_gee import ensure_imerg_data
         gauge_csv, ts_csv = ensure_imerg_data(cfg)
         if event_date is None:
             start = getattr(cfg, 'IMERG_START_LOCAL', None)

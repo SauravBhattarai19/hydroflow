@@ -21,7 +21,7 @@ Axes (edit the lists below to add/trim)
                                                         independent of RUNOFF_MECHANISMS)
     SD_REDUCER_OPTIONS = ['max', 'divide']            (how SERVES deficit is reduced to one
                                                         SD_max per rain-gauge zone — see
-                                                        vsa_opm/core/runoff/soil.py)
+                                                        hydroflow/core/runoff/soil.py)
 
     → 2 × 3 × 7 × 2 × 2 = 168 configs × 4 floods = 672 router runs.
     'green_ampt' and 'max' reuse the original (no-suffix) leaf path, so already-
@@ -97,7 +97,7 @@ MECH_SUBSETS = [
 ]
 
 # Whether the VSA sandbox's own recharge is capped by Green-Ampt infiltration
-# capacity (see vsa_opm/core/runoff/vsa.py: self._sandbox_infilt_on).  This is
+# capacity (see hydroflow/core/runoff/vsa.py: self._sandbox_infilt_on).  This is
 # independent of RUNOFF_MECHANISMS — it changes how fast the divide cell's
 # deficit fills, hence A_t(t) and the VSA mask, for EVERY mechanism subset.
 # 'green_ampt' is the default/back-compat leaf path (no suffix, reuses the
@@ -106,7 +106,7 @@ MECH_SUBSETS = [
 INFILT_OPTIONS = ['green_ampt', 'none']
 
 # How the per-cell SERVES deficit raster is reduced to one SD_max per
-# rain-gauge zone (vsa_opm/core/runoff/soil.py: per_zone_sd_from_raster).
+# rain-gauge zone (hydroflow/core/runoff/soil.py: per_zone_sd_from_raster).
 # 'max' is the default/back-compat leaf path (no suffix, reuses already-
 # completed runs); 'divide' (topographic candidate walk + nearest-zone
 # borrow fallback, added this session) gets a suffixed leaf.
@@ -171,7 +171,7 @@ def all_configs():
             'RUNOFF_MECHANISMS': list(mset),
             'OPM_SD_REDUCER':    reducer,
             # See INFILT_OPTIONS comment above — independent of RUNOFF_MECHANISMS,
-            # controls only the sandbox's own recharge cap (vsa_opm/core/runoff/vsa.py).
+            # controls only the sandbox's own recharge cap (hydroflow/core/runoff/vsa.py).
             'OPM_INFILTRATION':  infilt,
             'IMPERVIOUS_SOURCE': 'lcz' if 'impervious' in mset else 'none',
         }
