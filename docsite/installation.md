@@ -30,8 +30,8 @@ pip install hydroflow
 === "From source"
 
     ```bash
-    git clone https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model
-    cd One-Parameter-Hydrologic-Model
+    git clone https://github.com/SauravBhattarai19/hydroflow
+    cd hydroflow
     pip install .            # or pip install -e . for a live checkout
     ```
 

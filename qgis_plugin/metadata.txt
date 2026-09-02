@@ -16,12 +16,12 @@ about=This plugin wraps the full VSA-OPM pipeline (Pradhan & Ogden 2010) for use
   - Optional GPU acceleration via CuPy/CUDA (falls back to CPU automatically)
   - QGIS Processing Framework integration for scripting and the Graphical Modeller
 
-tracker=https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model/issues
-repository=https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model
+tracker=https://github.com/SauravBhattarai19/hydroflow/issues
+repository=https://github.com/SauravBhattarai19/hydroflow
 
 tags=hydrology,dem,watershed,routing,flood,opm,kinematic wave,vsa,runoff,precipitation
 
-homepage=https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model
+homepage=https://github.com/SauravBhattarai19/hydroflow
 category=Raster
 icon=resources/icon.png
 experimental=False

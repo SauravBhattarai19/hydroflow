@@ -3,7 +3,7 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 
-const repoBasePath = process.env.GITHUB_PAGES === 'true' ? '/One-Parameter-Hydrologic-Model' : '';
+const repoBasePath = process.env.GITHUB_PAGES === 'true' ? '/hydroflow' : '';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

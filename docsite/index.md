@@ -101,4 +101,4 @@ Every run is driven by a single [`Config`](configuration.md) object through
 A free, interactive companion textbook walks through the physics from the ground
 up (DEMs, delineation, runoff, and each routing scheme) with in-browser
 simulations:
-[**the hydroflow course**](https://sauravbhattarai19.github.io/One-Parameter-Hydrologic-Model/).
+[**the hydroflow course**](https://sauravbhattarai19.github.io/hydroflow/).

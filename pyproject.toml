@@ -56,9 +56,9 @@ gee = ["earthengine-api"]
 hydroflow = "hydroflow.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model"
-Documentation = "https://sauravbhattarai19.github.io/One-Parameter-Hydrologic-Model/"
-Issues = "https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model/issues"
+Homepage = "https://github.com/SauravBhattarai19/hydroflow"
+Documentation = "https://hydroflow.readthedocs.io"
+Issues = "https://github.com/SauravBhattarai19/hydroflow/issues"
 
 [tool.setuptools.packages.find]
 include = ["hydroflow*"]

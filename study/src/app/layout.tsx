@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <nav className="flex items-center gap-6 text-sm text-slate-600">
               <Link href="/" className="hover:text-sky-700 transition-colors">Chapters</Link>
-              <a href="https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model" target="_blank" rel="noopener"
+              <a href="https://github.com/SauravBhattarai19/hydroflow" target="_blank" rel="noopener"
                 className="hover:text-sky-700 transition-colors">GitHub</a>
             </nav>
           </div>

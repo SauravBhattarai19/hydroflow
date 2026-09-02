@@ -14,7 +14,7 @@ with optional GPU acceleration and Google Earth Engine forcing.
 
 **Full docs, guides and API reference → [hydroflow.readthedocs.io](https://hydroflow.readthedocs.io)**
 
-Learn the science interactively → [the hydroflow course](https://sauravbhattarai19.github.io/One-Parameter-Hydrologic-Model/)
+Learn the science interactively → [the hydroflow course](https://sauravbhattarai19.github.io/hydroflow/)
 
 ## Installation
 
@@ -59,8 +59,8 @@ hydroflow run -c run.yaml           # process_dem + routing
 ## Links
 
 - **Documentation:** <https://hydroflow.readthedocs.io>
-- **Interactive course:** <https://sauravbhattarai19.github.io/One-Parameter-Hydrologic-Model/>
-- **Source & issues:** <https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model>
+- **Interactive course:** <https://sauravbhattarai19.github.io/hydroflow/>
+- **Source & issues:** <https://github.com/SauravBhattarai19/hydroflow>
 
 ## License
 
