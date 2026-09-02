@@ -72,8 +72,8 @@ Thumbs.db
 # …but the small land-cover lookup tables ARE needed by the model/plugin.
 !lulc_lookup.csv
 !lcz_lookup.csv
-!vsa_opm/data/lulc_lookup.csv
-!vsa_opm/data/lcz_lookup.csv
+!hydroflow/data/lulc_lookup.csv
+!hydroflow/data/lcz_lookup.csv
 !_plugin_build/vsa_opm_plugin/_vendor/vsa_opm/data/lulc_lookup.csv
 !_plugin_build/vsa_opm_plugin/_vendor/vsa_opm/data/lcz_lookup.csv
 
