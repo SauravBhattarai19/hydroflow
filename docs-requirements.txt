@@ -1,0 +1,6 @@
+# Documentation build dependencies (mkdocs site in docsite/, config mkdocs.yml).
+#   pip install -r docs-requirements.txt
+#   mkdocs serve      # live preview at http://127.0.0.1:8000
+#   mkdocs build      # static site into ./site
+mkdocs-material
+mkdocstrings[python]

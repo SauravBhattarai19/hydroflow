@@ -1,5 +1,8 @@
 # Output folder
 output/
+
+# mkdocs build output (docs source lives in docsite/, config in mkdocs.yml)
+site/
 presentation/
 outputs collection/
 docs/
