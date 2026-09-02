@@ -4,6 +4,9 @@ presentation/
 outputs collection/
 docs/
 tests/
+runs/
+Extra/
+
 # …but the plugin's own unit tests ARE tracked (re-include dir, then its .py).
 !qgis_plugin/tests/
 !qgis_plugin/tests/*.py
@@ -50,6 +53,9 @@ key.json
 *.swp
 *.swo
 .claude/
+.github/
+.pytest_cache/
+tests/
 
 
 # OS
@@ -59,8 +65,10 @@ Thumbs.db
 # Data/Rasters (optional, but often useful to keep out of git if generated)
 *.tif
 *.tiff
+*.tif.aux.xml
 *.nc
 *.csv
+*.db
 # …but the small land-cover lookup tables ARE needed by the model/plugin.
 !lulc_lookup.csv
 !lcz_lookup.csv
@@ -71,6 +79,11 @@ Thumbs.db
 
 # Jupyter Notebooks
 .ipynb_checkpoints
+.agents
+.claude
+.codex
+.github/
+.vscode
 
 # GIS
 
@@ -92,3 +105,7 @@ serves.js
 
 # Notes/scratch
 understand_formulas/
+
+# Unrelated work-in-progress notes (e.g. r.avaflow/Trishuli GLOF studies) that
+# sometimes get dropped at repo root while working here — not vsa_opm code.
+plan.md

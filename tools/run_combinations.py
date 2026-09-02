@@ -13,11 +13,20 @@ time); here we enumerate the full cross-product so you can read off, e.g.,
 
 Axes (edit the lists below to add/trim)
 ---------------------------------------
-    CHANNEL   = [False, True]                       (channel cross-section on/off)
-    SCHEMES   = ['kinematic', 'diffusive']          (routing scheme)
-    MECH_SUBSETS = the 7 non-empty subsets of {vsa, horton, impervious}
+    CHANNEL            = [False, True]               (channel cross-section on/off)
+    SCHEMES            = ['kinematic', 'diffusive', 'muskingum']   (routing scheme)
+    MECH_SUBSETS       = the 7 non-empty subsets of {vsa, horton, impervious}
+    INFILT_OPTIONS     = ['green_ampt', 'none']       (does the VSA sandbox cap its own
+                                                        recharge by infiltration capacity —
+                                                        independent of RUNOFF_MECHANISMS)
+    SD_REDUCER_OPTIONS = ['max', 'divide']            (how SERVES deficit is reduced to one
+                                                        SD_max per rain-gauge zone — see
+                                                        vsa_opm/core/runoff/soil.py)
 
-    → 2 × 2 × 7 = 28 configs × 4 floods = 112 router runs.
+    → 2 × 3 × 7 × 2 × 2 = 168 configs × 4 floods = 672 router runs.
+    'green_ampt' and 'max' reuse the original (no-suffix) leaf path, so already-
+    completed runs are recognized as done and skipped; 'none' / 'divide' / and
+    any 'muskingum' leaf are new work, run only once, safely resumable.
 
 Everything else (OPM_SD_SOURCE='gee', DIFFUSION_THETA, CFL, Manning's-n source,
 SD reducer, …) comes from config.py; the gauge pipeline sets EVENT_START_UTC per
@@ -74,7 +83,7 @@ from tools.runners import gauge
 # Axes — EDIT HERE to change what gets run
 # ══════════════════════════════════════════════════════════════════════════════
 CHANNEL = [False, True]                       # channel cross-section routing on/off
-SCHEMES = ['kinematic', 'diffusive']          # routing scheme
+SCHEMES = ['kinematic', 'diffusive', 'muskingum']   # routing scheme
 
 # The 7 non-empty subsets of the three runoff mechanisms.
 MECH_SUBSETS = [
@@ -87,9 +96,23 @@ MECH_SUBSETS = [
     ['vsa', 'horton', 'impervious'],
 ]
 
-# Fixed knobs (held constant across every combo).  Promote either of these to a
-# loop axis in all_configs() if you want to sweep them too.
-SD_REDUCER      = 'max'        # 'max' | 'mean' | 'divide'
+# Whether the VSA sandbox's own recharge is capped by Green-Ampt infiltration
+# capacity (see vsa_opm/core/runoff/vsa.py: self._sandbox_infilt_on).  This is
+# independent of RUNOFF_MECHANISMS — it changes how fast the divide cell's
+# deficit fills, hence A_t(t) and the VSA mask, for EVERY mechanism subset.
+# 'green_ampt' is the default/back-compat leaf path (no suffix, reuses the
+# already-completed runs); 'none' gets a suffixed leaf so it's a genuinely new
+# run without disturbing anything already on disk.
+INFILT_OPTIONS = ['green_ampt', 'none']
+
+# How the per-cell SERVES deficit raster is reduced to one SD_max per
+# rain-gauge zone (vsa_opm/core/runoff/soil.py: per_zone_sd_from_raster).
+# 'max' is the default/back-compat leaf path (no suffix, reuses already-
+# completed runs); 'divide' (topographic candidate walk + nearest-zone
+# borrow fallback, added this session) gets a suffixed leaf.
+SD_REDUCER_OPTIONS = ['max', 'divide']
+
+# Fixed knob (held constant across every combo).
 DIFFUSION_THETA = 1.0          # only used when scheme == 'diffusive'
 
 
@@ -123,32 +146,41 @@ def _mech_name(mset):
     return '+'.join(_MECH_TOKEN[m] for m in _CANON if m in mset)
 
 
-def _leaf(chan, scheme, mset):
-    return f"chan_{'on' if chan else 'off'}/{scheme}/{_mech_name(mset)}"
+def _leaf(chan, scheme, mset, infilt, reducer):
+    base = f"chan_{'on' if chan else 'off'}/{scheme}/{_mech_name(mset)}"
+    # 'green_ampt'/'max' keep the original (no-suffix) path so already-
+    # completed runs are recognized as done and skipped; non-default values
+    # each get their own subfolder, combining cleanly when both apply.
+    if infilt != 'green_ampt':
+        base = f"{base}/infilt_none"
+    if reducer != 'max':
+        base = f"{base}/sd_divide"
+    return base
 
 
 def all_configs():
     """Return [(leaf_path, overrides_dict, meta_dict), ...] for the full product."""
     configs = []
-    for chan, scheme, mset in itertools.product(CHANNEL, SCHEMES, MECH_SUBSETS):
-        leaf = _leaf(chan, scheme, mset)
+    for chan, scheme, mset, infilt, reducer in itertools.product(
+            CHANNEL, SCHEMES, MECH_SUBSETS, INFILT_OPTIONS, SD_REDUCER_OPTIONS):
+        leaf = _leaf(chan, scheme, mset, infilt, reducer)
         overrides = {
             'CHANNEL_ROUTING':   chan,
             'ROUTING_SCHEME':    scheme,
             'DIFFUSION_THETA':   DIFFUSION_THETA,
             'RUNOFF_MECHANISMS': list(mset),
-            'OPM_SD_REDUCER':    SD_REDUCER,
-            # Keep param resolution + mass_balance.csv metadata consistent with the
-            # active mechanism set (RUNOFF_MECHANISMS is authoritative, but this
-            # makes OPM_INFILTRATION / IMPERVIOUS_SOURCE honest and avoids resolving
-            # layers a disabled mechanism does not need).
-            'OPM_INFILTRATION':  'green_ampt' if 'horton' in mset else 'none',
+            'OPM_SD_REDUCER':    reducer,
+            # See INFILT_OPTIONS comment above — independent of RUNOFF_MECHANISMS,
+            # controls only the sandbox's own recharge cap (vsa_opm/core/runoff/vsa.py).
+            'OPM_INFILTRATION':  infilt,
             'IMPERVIOUS_SOURCE': 'lcz' if 'impervious' in mset else 'none',
         }
         meta = {
-            'channel':     'on' if chan else 'off',
-            'scheme':      scheme,
-            'mechanisms':  _mech_name(mset),
+            'channel':      'on' if chan else 'off',
+            'scheme':       scheme,
+            'mechanisms':   _mech_name(mset),
+            'infiltration': infilt,
+            'sd_reducer':   reducer,
         }
         configs.append((leaf, overrides, meta))
     return configs
@@ -165,6 +197,16 @@ def _shared_raster_list():
 
 def seed_shared():
     SHARED.mkdir(parents=True, exist_ok=True)
+
+    # Already seeded (e.g. from an earlier sweep) — BASELINE_SRC may no longer
+    # even exist by this point (it's a one-time seed source, not maintained),
+    # so don't require it once _shared/ is self-sufficient.
+    already = list(SHARED.glob("deficit_serves_*.tif"))
+    if already and all((SHARED / f).exists() for f in SEED_FILES):
+        print(f"  _shared already seeded ({len(already)} deficit rasters + "
+              f"{len(SEED_FILES)} static rasters) → {SHARED.relative_to(REPO_ROOT)}")
+        return
+
     src = _shared_raster_list()
     if not src:
         sys.exit(f"[ERROR] No cached rasters found in {BASELINE_SRC}.\n"
@@ -214,10 +256,12 @@ def aggregate():
         for _, r in df.iterrows():
             ev  = str(r['event'])
             row = {
-                'channel':     meta['channel'],
-                'scheme':      meta['scheme'],
-                'mechanisms':  meta['mechanisms'],
-                'event':       ev,
+                'channel':      meta['channel'],
+                'scheme':       meta['scheme'],
+                'mechanisms':   meta['mechanisms'],
+                'infiltration': meta['infiltration'],
+                'sd_reducer':   meta['sd_reducer'],
+                'event':        ev,
                 'nse':         r.get('nse'),
                 'pbias_pct':   r.get('pbias_pct'),
                 'obs_peak_Q':  r.get('obs_peak_Q'),
@@ -237,8 +281,8 @@ def aggregate():
         print("  [aggregate] no completed configs yet — nothing to write.")
         return
     out = REPO_ROOT / ROOT / "master_summary.csv"
-    cols = ['channel', 'scheme', 'mechanisms', 'event', 'nse', 'pbias_pct',
-            'obs_peak_Q', 'mod_peak_Q', 'obs_peak_hr', 'mod_peak_hr',
+    cols = ['channel', 'scheme', 'mechanisms', 'infiltration', 'sd_reducer', 'event',
+            'nse', 'pbias_pct', 'obs_peak_Q', 'mod_peak_Q', 'obs_peak_hr', 'mod_peak_hr',
             'runoff_ratio', 'dunne_frac', 'horton_frac', 'imperv_frac', 'rel_error']
     df = pd.DataFrame(rows)
     df = df[[c for c in cols if c in df.columns]]
@@ -257,6 +301,7 @@ def run_study(filters=None, force=False):
 
     print(f"\n{'='*70}\n  COMBINATION SWEEP — {len(selected)} configs × 4 floods"
           f"\n  axes: channel{CHANNEL}  scheme{SCHEMES}  mechanisms×{len(MECH_SUBSETS)}"
+          f"  infiltration{INFILT_OPTIONS}  sd_reducer{SD_REDUCER_OPTIONS}"
           f"\n{'='*70}")
 
     log = []
@@ -268,7 +313,8 @@ def run_study(filters=None, force=False):
             log.append((leaf, "skip", 0.0))
             continue
         key = {k: overrides[k] for k in
-               ('CHANNEL_ROUTING', 'ROUTING_SCHEME', 'RUNOFF_MECHANISMS')}
+               ('CHANNEL_ROUTING', 'ROUTING_SCHEME', 'RUNOFF_MECHANISMS',
+                'OPM_INFILTRATION', 'OPM_SD_REDUCER')}
         print(f"  overrides: {key}")
         seed_leaf(leaf_path)
         t0 = time.time()
@@ -303,8 +349,9 @@ if __name__ == "__main__":
     if "--list" in args:
         for leaf, ov, _ in all_configs():
             tag = {k: ov[k] for k in ('CHANNEL_ROUTING', 'ROUTING_SCHEME',
-                                      'RUNOFF_MECHANISMS')}
-            print(f"  {leaf:42s}  {tag}")
+                                      'RUNOFF_MECHANISMS', 'OPM_INFILTRATION',
+                                      'OPM_SD_REDUCER')}
+            print(f"  {leaf:62s}  {tag}")
         print(f"\n  {len(all_configs())} configs × 4 floods.")
         sys.exit(0)
     if "--aggregate" in args:

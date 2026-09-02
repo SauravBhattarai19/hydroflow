@@ -167,6 +167,11 @@ RUNOFF_MECHANISMS = ['vsa', 'horton', 'impervious']
 #   at the catchment divide [m].  When OPM_SD_SOURCE='gee', overridden by SERVES.
 OPM_SD_MAX_INITIAL = 0.1    # m  (physical height, not water volume)
 
+# OPM_SD_MIN: minimum saturation deficit [m] — floor on SD_max(t) as the sandbox
+#   wets up (Rf = SD_min/SD_max drives Eq 4's A_t).  Only meaningful when 'vsa'
+#   is in RUNOFF_MECHANISMS (the sandbox is skipped entirely otherwise).
+OPM_SD_MIN         = 0.001  # m
+
 # OPM_Q_MAX: observed baseflow / initial discharge at the outlet [m³/s].
 #   Used in Eq 10 (Pradhan & Ogden 2010) to calibrate the initial A_t.
 OPM_Q_MAX          = 100    # m³/s  — set to observed pre-storm discharge
@@ -182,13 +187,20 @@ OPM_PER_POLYGON    = True
 
 # ── Infiltration model (Green-Ampt) ──────────────────────────────────────────
 # Adds an infiltration limit on top of the VSA saturation-excess mechanism.
-#   'none'       → original behaviour: ALL rain infiltrates the sandbox; runoff is
-#                  pure saturation-excess (cells in the VSA shed all rain).
-#   'green_ampt' → per-cell Green-Ampt infiltration capacity f_p = K·(1 + ψ·Δθ₀/F).
-#                  Infiltration-excess (rain − f_p) becomes Hortonian runoff, and at
-#                  each zone's divide the *infiltrated* depth (not all rain) drives the
-#                  sandbox z → SD_max(t) → A_t.  Δθ₀ is derived from the SERVES deficit
+# AUTHORITATIVE AND INDEPENDENT of RUNOFF_MECHANISMS (this is the one place
+# that decides it, regardless of whether 'horton' is also selected there):
+#   'none'       → the sandbox recharges from uncapped rainfall: ALL rain
+#                  reaches the divide's water table every step.
+#   'green_ampt' → per-cell Green-Ampt infiltration capacity f_p = K·(1 + ψ·Δθ₀/F)
+#                  caps how much of the divide cell's rain can recharge the
+#                  sandbox (z → SD_max(t) → A_t), whether or not 'horton' is in
+#                  RUNOFF_MECHANISMS.  Separately, when 'horton' IS also in
+#                  RUNOFF_MECHANISMS, the same f_p also generates infiltration-
+#                  excess (Hortonian) runoff that's added to the output at
+#                  every non-VSA cell.  Δθ₀ is derived from the SERVES deficit
 #                  raster ÷ root-zone depth (no extra download).
+# In short: OPM_INFILTRATION = "is the sandbox physically realistic".
+#           RUNOFF_MECHANISMS = "which mechanisms' runoff counts in the output".
 OPM_INFILTRATION = 'green_ampt'   # 'green_ampt' | 'none'
 
 # Wetting-front suction head ψ [m] for Green-Ampt.
@@ -324,7 +336,15 @@ CELL_SIZE = None
 #                 flow-depth-over-the-higher-bed.  Adds peak attenuation and adverse-
 #                 gradient slowdown along the drainage network.  Costs one extra
 #                 downstream gather per step (no Δx² penalty).
-ROUTING_SCHEME = 'diffusive'
+#   'muskingum' → Muskingum–Cunge (variable-parameter, Ponce–Yevjevich).  A kinematic-
+#                 wave scheme whose *numerical* diffusion is tuned (via the weighting
+#                 factor X) to equal the *physical* hydraulic diffusivity D=Q/(2·B·S₀),
+#                 so peak attenuation is physically correct AND grid-independent — unlike
+#                 the storage-cell kinematic/diffusive schemes whose attenuation drifts
+#                 with cell size Δx.  Each D8 cell is a reach; K=Δx/c, X=½(1−q/(S₀·c·Δx))
+#                 are recomputed per cell per step from the local celerity c=5/3·V.
+#                 DIFFUSION_THETA is ignored.
+ROUTING_SCHEME = 'muskingum'
 
 # DIFFUSION_THETA: diffusion weight θ∈[0,1] (used only when ROUTING_SCHEME='diffusive').
 #   0 → bed-slope-only (≈ kinematic)   |   1 → full water-surface-slope diffusion wave.

@@ -173,6 +173,119 @@ def diffusive_wave_discharge(depth, dem, dist, slope_bnd, n, ds_safe, valid_ds,
     return Q, A_xs, S_eff
 
 
+def normal_depth(Q_ref, slope, n, width, chan_mask, xp, iters=3):
+    """
+    Manning normal depth, matching the conveyance convention of ``mannings_discharge``.
+
+    Given a reference discharge ``Q_ref`` [m³/s], solve Manning's equation for the
+    flow depth ``h`` [m].  Overland cells (``chan_mask`` False) use the wide-sheet
+    shortcut ``R ≈ h`` (``width = cell_size``), giving the exact closed form
+
+        h = (n·Q/(B·√S))^(3/5)  ,   A_xs = B·h
+
+    Confined channel cells (``chan_mask`` True, ``width = B ≪ cell_size``) use the
+    true rectangular hydraulic radius ``R = A/P`` (``A = B·h``, ``P = B + 2h``),
+    refined from the wide-sheet guess by a few Newton iterations — the same split
+    ``mannings_discharge`` makes between overland and channel cells.
+
+    Used by the Muskingum–Cunge scheme to obtain the reference flow area (hence
+    celerity ``c = 5/3·Q_ref/A_xs``) from a rating rather than from a stored volume.
+
+    Parameters
+    ----------
+    Q_ref     : (n,) array – reference discharge [m³/s] (negatives floored to 0)
+    slope     : (n,) array – bed slope [m/m] (already floored at MIN_SLOPE)
+    n         : scalar or (n,) array – Manning's n
+    width     : (n,) array – section width B [m] (cell_size overland, B on channels)
+    chan_mask : (n,) bool array – True where the rectangular R=A/P section applies
+    xp        : array module (numpy or cupy)
+    iters     : int – Newton iterations for channel cells (3 is ample)
+
+    Returns
+    -------
+    h    : (n,) array [m]  – normal (flow) depth
+    A_xs : (n,) array [m²] – flow cross-section area B·h  (celerity denominator)
+    """
+    sqrtS = xp.sqrt(slope)
+    Qpos  = xp.maximum(Q_ref, 0.0)
+    # Wide-sheet closed form (R ≈ h) — exact overland, Newton seed for channels.
+    h   = (n * Qpos / (width * sqrtS + 1e-30)) ** 0.6
+    ref = chan_mask & (Qpos > 1e-12)        # only refine wet channel cells
+    for _ in range(iters):
+        A  = width * h
+        P  = width + 2.0 * h
+        Qp = (1.0 / n) * sqrtS * A ** (5.0 / 3.0) / P ** (2.0 / 3.0)
+        dQ = ((1.0 / n) * sqrtS * A ** (2.0 / 3.0) * P ** (-5.0 / 3.0)
+              * ((5.0 / 3.0) * width * P - (4.0 / 3.0) * A))
+        step = xp.where(ref, (Qp - Qpos) / xp.maximum(dQ, 1e-30), 0.0)
+        h    = xp.maximum(h - step, 0.0)
+    A_xs = width * h
+    return h, A_xs
+
+
+def muskingum_cunge_step(I2, I1, O1, Q_L, c, A_xs, width, slope, dist, dt, xp):
+    """
+    One variable-parameter Muskingum–Cunge (Ponce–Yevjevich) update per cell.
+
+    Each D8 cell is treated as a reach of length ``dist``.  The outflow at the new
+    time is
+
+        O₂ = C0·I₂ + C1·I₁ + C2·O₁ + C3·Q_L          (C0 + C1 + C2 = 1)
+
+    with the Cunge coefficients written in Courant / grid-Peclet form so that the
+    scheme's *numerical* diffusion equals the *physical* hydraulic diffusivity
+    D = Q/(2·B·S₀) of the diffusion-wave equation — grid-independent, physically
+    correct attenuation from a kinematic-wave scheme:
+
+        Cr = c·dt/dist                     (Courant number, c = 5/3·V)
+        Dg = q/(S₀·c·dist) = (3/5)·(A_xs/B)/(S₀·dist)   (grid Peclet; = 1 − 2X)
+        C0 = (−1 + Cr + Dg)/denom ,  C1 = (1 + Cr − Dg)/denom
+        C2 = ( 1 − Cr + Dg)/denom ,  C3 = (2·Cr)/denom ,  denom = 1 + Cr + Dg
+
+    ``Dg`` is evaluated as ``(3/5)·h_eff/(S₀·dist)`` with ``h_eff = A_xs/B`` — this
+    is identically ``q/(S₀·c·dist)`` (since ``q/c = 3/5·h_eff``) but stays finite as
+    ``Q_ref → 0`` (dry cells give ``Cr = Dg = 0`` cleanly instead of 0/0).
+
+    ``C0`` is intentionally *not* clamped to ≥0 — a negative ``C0`` is the faithful
+    MC representation of the wave and only produces a tiny, mass-conserving dip; the
+    final ``O₂`` is floored at 0 as a physical safeguard (backflow is unphysical).
+    Mass is conserved by the caller's volume ledger (every ``O₂·dt`` scattered
+    downstream), independent of this shape function, so the floor is safe.
+
+    Parameters
+    ----------
+    I2, I1 : (n,) arrays – inflow rate this / previous step [m³/s]
+    O1     : (n,) array  – outflow rate previous step [m³/s]
+    Q_L    : (n,) array  – lateral inflow rate (effective runoff) [m³/s]
+    c      : (n,) array  – kinematic celerity 5/3·V [m/s]
+    A_xs   : (n,) array  – reference flow area [m²]
+    width  : (n,) array  – section width B [m]
+    slope  : (n,) array  – bed slope [m/m]
+    dist   : (n,) array  – reach length Δx [m]
+    dt     : float       – time step [s]
+    xp     : array module (numpy or cupy)
+
+    Returns
+    -------
+    O2       : (n,) array [m³/s] – outflow this step (floored at 0)
+    neg_frac : 0-d array         – fraction of cells whose raw O₂ was negative
+                                   (floored) — a resolution diagnostic
+    """
+    Cr    = c * dt / dist
+    h_eff = A_xs / xp.maximum(width, 1e-30)
+    Dg    = 0.6 * h_eff / (slope * dist)
+    denom = 1.0 + Cr + Dg
+    C0 = (-1.0 + Cr + Dg) / denom
+    C1 = ( 1.0 + Cr - Dg) / denom
+    C2 = ( 1.0 - Cr + Dg) / denom
+    C3 = ( 2.0 * Cr)       / denom
+    O2 = C0 * I2 + C1 * I1 + C2 * O1 + C3 * Q_L
+    neg      = O2 < 0.0
+    neg_frac = neg.sum() / xp.maximum(O2.size, 1)
+    O2 = xp.maximum(O2, 0.0)
+    return O2, neg_frac
+
+
 def flux_limiter(Q_out, volume, dt):
     """
     Volume-conservative CFL limiter.

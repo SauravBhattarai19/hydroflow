@@ -205,17 +205,20 @@ class DemStepWorker(QThread):
         try:
             from vsa_opm.core import dem_processing as dp
 
+            engine = self._params.get("engine", "pysheds")
             if self._task == "analyze_terrain":
                 out = dp.analyze_terrain(
                     self._params["dem_path"],
                     self._params["target_crs_epsg"],
                     self._params["output_dir"],
+                    engine=engine,
                 )
             elif self._task == "delineate":
                 out = dp.delineate_from_outlet(
                     self._params["output_dir"],
                     self._params["output_point_latlon"],
                     self._params["target_crs_epsg"],
+                    engine=engine,
                 )
             else:
                 raise ValueError(f"Unknown DEM step: {self._task!r}")

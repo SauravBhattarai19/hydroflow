@@ -7,6 +7,8 @@ config values or from the SERVES/SoilGrids rasters (via vsa_opm.gee), plus the
 Rawls (1983) Green-Ampt suction lookup by USDA texture class.
 """
 
+import os
+
 import numpy as np
 import rasterio
 
@@ -26,10 +28,11 @@ def resolve_sd_params(cfg, cell_size):
     """
     sd_source   = getattr(cfg, 'OPM_SD_SOURCE', 'manual').lower()
     ksat_ms     = float(getattr(cfg, 'OPM_K_SAT', 44.0)) / 86400.0
+    sd_min      = float(getattr(cfg, 'OPM_SD_MIN', OPM_SD_MIN))
 
     _manual_params = {
         'sd_max': float(cfg.OPM_SD_MAX_INITIAL),
-        'sd_min': OPM_SD_MIN,
+        'sd_min': sd_min,
         'phi': float(getattr(cfg, 'OPM_PHI', 0.10)),
         'sd_max_per_polygon': None,
         'ksat_ms': ksat_ms,
@@ -106,10 +109,9 @@ def resolve_sd_params(cfg, cell_size):
     # Re-runs of the same event reuse the cached file (no re-download).
     # Falls back to the plain name when target_date is None (manual SD mode).
     out_path = getattr(cfg, 'OPM_DEFICIT_RASTER', None) \
-        or (getattr(cfg, 'OUTPUT_DIR', 'output/') + 'deficit_serves.tif')
+        or os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'), 'deficit_serves.tif')
     if target_date:
-        import os as _os
-        _base, _ext = _os.path.splitext(out_path)
+        _base, _ext = os.path.splitext(out_path)
         out_path = f"{_base}_{target_date}{_ext}"
     deficit_raster = None
     try:
@@ -134,7 +136,7 @@ def resolve_sd_params(cfg, cell_size):
 
     return {
         'sd_max': sd_max,
-        'sd_min': OPM_SD_MIN,
+        'sd_min': sd_min,
         'phi': phi,
         'sd_max_per_polygon': None,   # resolved per-zone from the raster instead
         'ksat_ms': ksat_ms,
@@ -142,9 +144,71 @@ def resolve_sd_params(cfg, cell_size):
     }
 
 
+def resolve_zone_divides(cell_polygon, n_polygons, faccum_1d, dem,
+                          s_rows, s_cols, transform):
+    """
+    Per precipitation zone, resolve the divide cell (topographic headwater —
+    minimum flow accumulation, tie-broken by maximum elevation — where that
+    zone's OPM sandbox water-balance state actually runs) plus two extra
+    pieces of geometry used only for SD_max gap-filling (per_zone_sd_from_raster,
+    reducer='divide'); the divide-cell *selection rule itself* is unchanged
+    from before this helper existed.
+
+    Returns
+    -------
+    divide_idx : (n_polygons,) intp ndarray
+        Single best cell per zone.  This is what drives sandbox physics
+        (assigned to ``_polygon_divide_idx`` and used by
+        ``_divide_infiltration``) — identical values to the old inline loops.
+    divide_candidates : list[np.ndarray], length n_polygons
+        Per zone, EVERY cell tied at that zone's minimum flow accumulation,
+        ranked by elevation descending.  ``divide_candidates[p][0] ==
+        divide_idx[p]`` by construction.  Zones owning zero cells (e.g.
+        gridded-precip edge pixels) get the catchment-wide fallback divide
+        as their sole one-element candidate list, so they participate in
+        SD_max resolution like any other zone.
+    divide_xy : (n_polygons, 2) float64 ndarray
+        Real-world (easting, northing) of divide_idx[p], via
+        ``rasterio.transform.xy`` — used to find the physically nearest
+        zone when borrowing an SD_max estimate.
+    """
+    _to_np = lambda a: a.get() if hasattr(a, 'get') else np.asarray(a)
+    faccum_np = _to_np(faccum_1d)
+    sr = _to_np(s_rows); sc = _to_np(s_cols)
+
+    # Catchment-wide fallback divide (min faccum, highest elevation on tie).
+    # Used for zones that contain no watershed cells — possible when the
+    # precipitation stations come from a gridded product (e.g. IMERG) whose
+    # buffered footprint includes pixels with no cell nearest to them.
+    g_cand = np.where(faccum_np == faccum_np.min())[0]
+    g_elev = dem[sr[g_cand], sc[g_cand]]
+    global_divide = int(g_cand[g_elev.argmax()])
+
+    divide_idx = np.empty(n_polygons, dtype=np.intp)
+    divide_candidates = [None] * n_polygons
+
+    for p in range(n_polygons):
+        local_idx = np.where(cell_polygon == p)[0]
+        if local_idx.size == 0:
+            divide_idx[p] = global_divide
+            divide_candidates[p] = np.array([global_divide], dtype=np.intp)
+            continue
+        local_fa = faccum_np[local_idx]
+        candidates = local_idx[local_fa == local_fa.min()]
+        elev = dem[sr[candidates], sc[candidates]]
+        ranked = candidates[np.argsort(-elev)]         # elevation descending
+        divide_idx[p] = ranked[0]
+        divide_candidates[p] = ranked
+
+    xs, ys = rasterio.transform.xy(transform, sr[divide_idx], sc[divide_idx])
+    divide_xy = np.column_stack([xs, ys]).astype(np.float64)
+
+    return divide_idx, divide_candidates, divide_xy
+
+
 def per_zone_sd_from_raster(deficit_path, cell_polygon, n_polygons,
                              s_rows, s_cols, reducer, sd_min, ws_default,
-                             divide_idx=None):
+                             divide_candidates=None, divide_xy=None):
     """
     Reduce the per-cell deficit raster into one SD_max per precipitation zone.
 
@@ -152,10 +216,11 @@ def per_zone_sd_from_raster(deficit_path, cell_polygon, n_polygons,
       'mean'   – zone-average deficit (representative; outlier-robust).
       'max'    – largest deficit in the zone (max soil-STORAGE-capacity cell;
                  biased toward deep-rooted cells via Z_r, not pure dryness).
-      'divide' – deficit sampled AT the zone's divide cell (``divide_idx[p]``), so
-                 the SD_max ceiling is measured where the OPM sandbox actually runs.
-                 Falls back to that zone's max-finite deficit, then *ws_default*,
-                 when the divide cell has no SERVES data (cloud gap).
+      'divide' – deficit measured at (or near) the zone's divide cell, so the
+                 SD_max ceiling stays consistent with where the OPM sandbox
+                 actually runs.  Tiered fallback when the exact divide pixel
+                 has no SERVES data (cloud gap) — see the 'divide' branch
+                 below for the full tier order and rationale.
 
     For 'mean'/'max', SD_max[p] is reduced over ONLY the watershed cells that zone
     owns (cell_polygon == p) — the exact same nearest-station partition the
@@ -181,18 +246,75 @@ def per_zone_sd_from_raster(deficit_path, cell_polygon, n_polygons,
     deficit_1d = deficit2d[sr, sc]                 # (n_cells,) deficit per cell
     finite     = np.isfinite(deficit_1d)
 
-    if reducer == 'divide' and divide_idx is not None:
-        div = _to_np(divide_idx).astype(np.intp)
-        sd  = np.full(n_polygons, ws_default, dtype=np.float64)
+    if reducer == 'divide' and divide_candidates is not None:
+        sd = np.full(n_polygons, ws_default, dtype=np.float64)
+        resolved_tier12 = np.zeros(n_polygons, dtype=bool)
+        rank_used = np.full(n_polygons, -1, dtype=np.intp)   # diagnostics only
+
+        # Tier 1+2 (merged): walk each zone's elevation-ranked candidates —
+        # every cell tied at that zone's min flow accumulation — and take the
+        # first one with a finite deficit value.  Rank 0 is the exact divide
+        # cell; deeper ranks are still topographically "divide-equivalent"
+        # (same min-faccum tier), just a different elevation among the ties.
+        # Nothing downstream distinguishes "exact divide cell" from "topo
+        # fallback" for SD_max purposes (the only other divide-cell consumer,
+        # _polygon_divide_idx, is used solely for sandbox physics in
+        # _divide_infiltration — entirely disjoint from this function), so
+        # merging these two tiers is safe.  Rank is kept only to report how
+        # far down the list each zone had to go.
         for p in range(n_polygons):
-            v = deficit_1d[div[p]]
-            if np.isfinite(v):
-                sd[p] = float(v)                       # deficit at the divide cell
-            else:
-                m = (cell_polygon == p) & finite       # fallback: zone max-finite
-                if m.any():
-                    sd[p] = float(np.max(deficit_1d[m]))
-                # else keep ws_default
+            for rank, ci in enumerate(divide_candidates[p]):
+                v = deficit_1d[ci]
+                if np.isfinite(v):
+                    sd[p] = float(v)
+                    resolved_tier12[p] = True
+                    rank_used[p] = rank
+                    break
+
+        # Tier 3: for zones whose ENTIRE divide-candidate set is NODATA,
+        # borrow the SD_max value from the nearest OTHER zone that itself
+        # resolved in tier 1+2 (divide-cell-to-divide-cell distance).
+        # lender_mask is a fixed snapshot taken before this loop and never
+        # mutated inside it, so a borrower can never itself become a lender
+        # later in the same pass (no borrow-chains).
+        #
+        # Deliberately NOT falling back to "max deficit anywhere in the
+        # zone, any elevation" first (the old behavior): empirically, of the
+        # zones whose divide-candidate set was fully NODATA (across 4 tested
+        # events x 7 zones for this basin), most had their WHOLE zone at
+        # exactly 0% coverage (0 finite cells) — that fallback would have
+        # found nothing there either.  One zone/event was the exception, at
+        # 0.01% coverage (a single stray finite pixel out of ~8,800 cells,
+        # topographically unverified — no better justified than the
+        # "nearest raw pixel" approach this session already showed to be
+        # misleading).  Reintroducing that tier would trade a single
+        # untrustworthy pixel for the topographic consistency 'divide' mode
+        # exists to provide, so it's skipped in favor of tier 3/4 below.
+        # This is an empirical finding for the tested basin/events, not a
+        # universal guarantee; a future basin could have more off-ridge-only
+        # coverage, in which case it still resolves correctly here, just
+        # without that (rejected) single-pixel shortcut.
+        n_borrowed = 0
+        if divide_xy is not None:
+            lenders = np.where(resolved_tier12)[0]
+            for p in range(n_polygons):
+                if resolved_tier12[p] or lenders.size == 0:
+                    continue
+                d2 = np.sum((divide_xy[lenders] - divide_xy[p]) ** 2, axis=1)
+                sd[p] = sd[lenders[np.argmin(d2)]]
+                n_borrowed += 1
+
+        # Tier 4: zones still unresolved keep ws_default (already sd[]'s
+        # initial value) — e.g. every zone in the basin is dark that date,
+        # or n_polygons == 1 with nothing to borrow from.
+        n_default = int(n_polygons - resolved_tier12.sum() - n_borrowed)
+        print(f"  SD_max (divide) | {int(resolved_tier12.sum())}/{n_polygons} "
+              f"resolved via topo walk"
+              + (f" (max rank {int(rank_used[resolved_tier12].max())})"
+                 if resolved_tier12.any() else "")
+              + f", {n_borrowed}/{n_polygons} borrowed from nearest zone, "
+                f"{n_default}/{n_polygons} watershed default")
+
         return np.maximum(sd, sd_min)
 
     redux = np.max if reducer == 'max' else np.mean

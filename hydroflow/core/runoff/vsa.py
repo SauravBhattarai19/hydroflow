@@ -19,6 +19,7 @@ from ..io_utils import raster_band_1d
 from .soil import (
     OPM_Q_MIN,
     resolve_sd_params,
+    resolve_zone_divides,
     per_zone_sd_from_raster,
     usda_psi_m,
 )
@@ -43,7 +44,15 @@ class VsaOpmMixin:
         to the original `rain · in_VSA`.
         """
         xp = self._xp
-        if self._infiltration == 'green_ampt':
+        # excess_frac is computed whenever the shared Green-Ampt machinery is
+        # active (self._ga_active = horton_on OR sandbox_infilt_on), since the
+        # sandbox's own recharge cap (_divide_infiltration) needs the same f_p
+        # physics.  But it may only be ADDED to the output / reported as Horton
+        # runoff when the user actually selected 'horton' in RUNOFF_MECHANISMS
+        # (self._horton_on) — otherwise a user who only wants the sandbox
+        # capped (without reporting Horton) would silently get Horton runoff
+        # leaking into the output.
+        if self._ga_active:
             f_p = self._ga_ksat * (1.0 + self._ga_psi * self._ga_dtheta0
                                    / xp.maximum(self._ga_F, self._GA_F_FLOOR))
             excess      = xp.maximum(rain_1d - f_p, 0.0)
@@ -51,7 +60,8 @@ class VsaOpmMixin:
                                    excess / xp.maximum(rain_1d, 1e-30), 0.0)
         else:
             excess_frac = 0.0
-        pervious_frac = xp.where(self._vsa_mask, 1.0, excess_frac)
+        effective_excess_frac = excess_frac if self._horton_on else 0.0
+        pervious_frac = xp.where(self._vsa_mask, 1.0, effective_excess_frac)
 
         # ── Mechanism decomposition (per-cell rates [m/s]) ───────────────────
         # Stash the three runoff components so the router can accumulate the
@@ -60,12 +70,12 @@ class VsaOpmMixin:
         # i.e. they sum EXACTLY to the effective runoff returned below.
         #   • impervious : urban shedding,            rain·Imp
         #   • Dunne      : saturation-excess (in VSA), rain·(1−Imp)         on VSA cells
-        #   • Horton     : infiltration-excess,        rain·(1−Imp)·excess_frac off VSA
+        #   • Horton     : infiltration-excess,        rain·(1−Imp)·effective_excess_frac off VSA
         imp  = self._imperv_1d
         perv = 1.0 - imp
         self._last_imperv_rate = rain_1d * imp
         self._last_dunne_rate  = rain_1d * perv * xp.where(self._vsa_mask, 1.0, 0.0)
-        self._last_horton_rate = rain_1d * perv * xp.where(self._vsa_mask, 0.0, excess_frac)
+        self._last_horton_rate = rain_1d * perv * xp.where(self._vsa_mask, 0.0, effective_excess_frac)
 
         return rain_1d * (self._imperv_1d
                           + (1.0 - self._imperv_1d) * pervious_frac)
@@ -199,10 +209,23 @@ class VsaOpmMixin:
         self._imperv_1d = xp.asarray(imperv_np)
 
         # ── Green-Ampt per-cell infiltration setup ────────────────────────────
-        # Horton mechanism membership is authoritative: 'horton' → Green-Ampt.
-        self._infiltration = 'green_ampt' if self._horton_on else 'none'
-        self._GA_F_FLOOR   = 1e-9        # m — floor on F so f_p is finite at F=0
-        if self._infiltration == 'green_ampt':
+        # Two independent consumers of the same Green-Ampt physics:
+        #   • self._horton_on         (RUNOFF_MECHANISMS) — is Horton's own
+        #     infiltration-excess ADDED to the output runoff / partition?
+        #   • self._sandbox_infilt_on (cfg.OPM_INFILTRATION, authoritative,
+        #     independent of RUNOFF_MECHANISMS) — is the VSA sandbox's own
+        #     recharge (see _divide_infiltration) CAPPED by infiltration
+        #     capacity, or given rainfall uncapped?  This used to be silently
+        #     tied to self._horton_on, which made 'vsa'-alone runs recharge the
+        #     sandbox with 100% of rainfall (unphysical — see
+        #     outputs collection/combinations_100m/figures/mechanism_spatial/).
+        # self._ga_active gates whether the shared GA parameter machinery
+        # (psi/ksat/dtheta0/F) is resolved and advanced at all, since both
+        # consumers above read the same underlying per-cell state.
+        self._sandbox_infilt_on = str(getattr(cfg, 'OPM_INFILTRATION', 'none')).lower() == 'green_ampt'
+        self._ga_active         = self._horton_on or self._sandbox_infilt_on
+        self._GA_F_FLOOR        = 1e-9   # m — floor on F so f_p is finite at F=0
+        if self._ga_active:
             # Wetting-front suction ψ [m] per cell (scalar or SoilGrids texture).
             psi_m = self._resolve_ga_psi_m(
                 cfg, grid_data, float(getattr(cfg, 'OPM_GA_SUCTION_M', 0.15)))
@@ -296,32 +319,11 @@ class VsaOpmMixin:
             dem = grid_data['dem']
             s_rows = grid_data['s_rows']
             s_cols = grid_data['s_cols']
+            transform = grid_data['transform']
 
-            divide_idx     = np.empty(n_polygons, dtype=np.intp)
-            slope_divide   = np.empty(n_polygons, dtype=np.float64)
-
-            # Catchment-wide fallback divide (min faccum, highest elevation on tie).
-            # Used for zones that contain no watershed cells — possible when the
-            # precipitation stations come from a gridded product (e.g. IMERG) whose
-            # buffered footprint includes pixels with no cell nearest to them.  Such
-            # zones never index any real cell, so the fallback only avoids the
-            # empty-array reduction; it does not affect results.
-            g_cand = np.where(faccum_np == faccum_np.min())[0]
-            g_elev = dem[s_rows[g_cand], s_cols[g_cand]]
-            global_divide = int(g_cand[g_elev.argmax()])
-
-            for p in range(n_polygons):
-                local_idx = np.where(cell_polygon == p)[0]
-                if local_idx.size == 0:
-                    divide_idx[p]   = global_divide
-                    slope_divide[p] = float(slope_np[global_divide])
-                    continue
-                local_fa  = faccum_np[local_idx]
-                candidates = local_idx[local_fa == local_fa.min()]
-                elev = dem[s_rows[candidates], s_cols[candidates]]
-                best = candidates[elev.argmax()]
-                divide_idx[p]   = best
-                slope_divide[p] = float(slope_np[best])
+            divide_idx, divide_candidates, divide_xy = resolve_zone_divides(
+                cell_polygon, n_polygons, faccum_np, dem, s_rows, s_cols, transform)
+            slope_divide = slope_np[divide_idx]
 
             self._per_polygon          = True
             self._n_polygons           = n_polygons
@@ -338,7 +340,7 @@ class VsaOpmMixin:
                 sd_init_arr = per_zone_sd_from_raster(
                     deficit_raster, cell_polygon, n_polygons,
                     s_rows, s_cols, reducer, sd_min, SD_max_initial,
-                    divide_idx=divide_idx)
+                    divide_candidates=divide_candidates, divide_xy=divide_xy)
                 n_real = int((np.abs(sd_init_arr - SD_max_initial) > 1e-9).sum())
                 print(f"                |  Per-zone SD ({reducer}) over watershed "
                       f"cells: {n_real}/{n_polygons} zones populated, "
@@ -439,7 +441,7 @@ class VsaOpmMixin:
             return np.full(n, kv_scalar, dtype=np.float64)
 
         path = getattr(cfg, 'OPM_GA_KSAT_RASTER', None) \
-            or (getattr(cfg, 'OUTPUT_DIR', 'output/') + 'ksat_hihydro.tif')
+            or os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'), 'ksat_hihydro.tif')
 
         if source == 'gee':
             try:
@@ -495,7 +497,7 @@ class VsaOpmMixin:
         if source != 'texture':
             return np.full(n, psi_scalar, dtype=np.float64)
 
-        path = getattr(cfg, 'OUTPUT_DIR', 'output/') + 'texture_sandclay.tif'
+        path = os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'), 'texture_sandclay.tif')
         try:
             from ...gee.serves_gee import download_texture_raster
             got = download_texture_raster(
@@ -547,7 +549,7 @@ class VsaOpmMixin:
 
     def _update_ga_F(self, rain_1d, dt):
         """Advance per-cell Green-Ampt cumulative infiltration F [m]."""
-        if self._infiltration != 'green_ampt':
+        if not self._ga_active:
             return
         xp  = self._xp
         f_p = self._ga_ksat * (1.0 + self._ga_psi * self._ga_dtheta0
@@ -557,17 +559,20 @@ class VsaOpmMixin:
 
     def _divide_infiltration(self, rain_1d):
         """
-        Effective infiltration rate [m/s] feeding each zone's sandbox at its
-        divide cell.  With Green-Ampt, rainfall is capped by the local
-        infiltration capacity and scaled by the pervious fraction (the
-        impervious fraction sheds water and does not recharge the water table).
+        Effective recharge rate [m/s] feeding each zone's sandbox at its divide
+        cell.  Gated by self._sandbox_infilt_on (cfg.OPM_INFILTRATION),
+        independent of whether Horton's own runoff is being reported
+        (self._horton_on) — the sandbox's water balance should reflect a real
+        infiltration limit whenever the user asks for one, regardless of which
+        mechanisms are selected in RUNOFF_MECHANISMS.  Impervious cells never
+        recharge the water table, capped or not.
         Returns a (n_polygons,) array indexed by polygon_divide_idx.
         """
         xp    = self._xp
         idx   = self._polygon_divide_idx
         P_div = rain_1d[idx]
-        if self._infiltration != 'green_ampt':
-            return P_div
+        if not self._sandbox_infilt_on:
+            return (1.0 - self._imperv_1d[idx]) * P_div
         f_p = self._ga_ksat[idx] * (1.0 + self._ga_psi[idx] * self._ga_dtheta0[idx]
                                     / xp.maximum(self._ga_F[idx], self._GA_F_FLOOR))
         f_div = xp.minimum(P_div, f_p)
@@ -614,14 +619,14 @@ class VsaOpmMixin:
         """
         di    = self._divide_cell
         P_div = float(rain_1d[di])
-        if self._infiltration == 'green_ampt':
+        if self._sandbox_infilt_on:
             F_d  = float(self._ga_F[di])
             kv   = float(self._ga_ksat[di])
             dth0 = float(self._ga_dtheta0[di])
             f_p  = kv * (1.0 + float(self._ga_psi[di]) * dth0 / max(F_d, self._GA_F_FLOOR))
             f_div = (1.0 - float(self._imperv_1d[di])) * min(P_div, f_p)
         else:
-            f_div = P_div
+            f_div = (1.0 - float(self._imperv_1d[di])) * P_div
 
         q_b = self._ksat_ms * self._slope_divide * self._opm_z * self._cell_size
         dV  = (f_div * self._cell_area - q_b) * dt

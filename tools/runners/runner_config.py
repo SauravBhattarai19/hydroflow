@@ -51,7 +51,7 @@ PRECIP_METHOD = "thiessen"
 #
 # This OVERRIDES config.OUTPUT_DIR for the batch run, so change the scenario
 # folder in this one place.  (Relative paths are resolved against the repo root.)
-OUTPUT_DIR = "outputs collection/channel_different"
+OUTPUT_DIR = "outputs collection/test_muskinghum"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

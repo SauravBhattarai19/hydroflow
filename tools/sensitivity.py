@@ -111,6 +111,7 @@ EXPERIMENTS = [
 
     # C — routing scheme + diffusion weight (run WITH channel routing on)
     ("C_routing/kinematic",       cfg(ROUTING_SCHEME='kinematic')),
+    ("C_routing/muskingum",       cfg(ROUTING_SCHEME='muskingum')),
     ("C_routing/diff_theta_0.25", cfg(DIFFUSION_THETA=0.25)),
     ("C_routing/diff_theta_0.50", cfg(DIFFUSION_THETA=0.50)),
     ("C_routing/diff_theta_0.75", cfg(DIFFUSION_THETA=0.75)),

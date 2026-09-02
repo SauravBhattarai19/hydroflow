@@ -133,11 +133,14 @@ class RunoffEngine(VsaOpmMixin):
         if self._mode == 'none':
             return False
         if self._mode == 'vsa_opm':
-            # Runoff can come from the VSA, impervious cells, or Green-Ampt
+            # Runoff can come from the VSA, impervious cells, or Horton's own
             # infiltration-excess — any of which makes the engine "active".
+            # Note: self._horton_on (not the sandbox's recharge cap) is the
+            # right test here, since the sandbox cap alone (self._sandbox_
+            # infilt_on) doesn't add any separate output runoff by itself.
             return (bool(self._vsa_mask.any())
                     or bool((self._imperv_1d > 0).any())
-                    or self._infiltration == 'green_ampt')
+                    or self._horton_on)
         if self._mode == 'coefficient':
             return bool((self._Cf_1d > 0).any())
         if self._mode == 'raster':

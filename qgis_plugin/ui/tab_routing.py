@@ -133,7 +133,9 @@ class TabRouting(QWidget):
         self.scheme_combo.addItems([
             "kinematic — Manning on static bed slope (fast, reproducible)",
             "diffusive — CASC2D/GSSHA water-surface-slope diffusion wave",
+            "muskingum — Muskingum–Cunge (physical diffusion, grid-independent)",
         ])
+        self._SCHEMES = ["kinematic", "diffusive", "muskingum"]
         self.scheme_combo.setCurrentIndex(1)   # diffusive default
         form.addRow("Scheme:", self.scheme_combo)
 
@@ -352,7 +354,8 @@ class TabRouting(QWidget):
         faccum = getattr(cfg, "CHANNEL_FACCUM_THRESHOLD", None)
         self.channel_faccum.setValue(int(faccum) if faccum else 0)
 
-        self.scheme_combo.setCurrentIndex(1 if getattr(cfg, "ROUTING_SCHEME", "kinematic") == "diffusive" else 0)
+        _scheme = str(getattr(cfg, "ROUTING_SCHEME", "kinematic")).lower()
+        self.scheme_combo.setCurrentIndex(self._SCHEMES.index(_scheme) if _scheme in self._SCHEMES else 0)
         self.diffusion_theta.setValue(float(getattr(cfg, "DIFFUSION_THETA", 1.0)))
 
         self.channel_routing.setChecked(bool(getattr(cfg, "CHANNEL_ROUTING", False)))
@@ -388,7 +391,7 @@ class TabRouting(QWidget):
         cfg.MANNINGS_N_CHANNEL = self.channel_n.value() if self.channel_n_override.isChecked() else None
         cfg.CHANNEL_FACCUM_THRESHOLD = self.channel_faccum.value() or None
 
-        cfg.ROUTING_SCHEME = "diffusive" if self.scheme_combo.currentIndex() == 1 else "kinematic"
+        cfg.ROUTING_SCHEME = self._SCHEMES[self.scheme_combo.currentIndex()]
         cfg.DIFFUSION_THETA = self.diffusion_theta.value()
 
         cfg.CHANNEL_ROUTING = self.channel_routing.isChecked()

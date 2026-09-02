@@ -191,6 +191,14 @@ def initialise_grid(cfg):
     else:
         grid_data["runoff_engine"] = None
 
+    # Build upstream inflow boundary condition(s) (optional; None when disabled)
+    if getattr(cfg, 'ROUTING_INFLOW_BC', None):
+        from .boundary import InflowBoundary
+        _bc = InflowBoundary(cfg, grid_data)
+        grid_data["inflow_bc"] = _bc if _bc.active else None
+    else:
+        grid_data["inflow_bc"] = None
+
     return grid_data
 
 
@@ -244,12 +252,32 @@ def run_time_loop(grid_data, cfg):
     ws_mask        = grid_data["ws_mask"]
     precip_engine  = grid_data["precip_engine"]
     runoff_engine  = grid_data.get("runoff_engine")   # None when RUNOFF_SOURCE='none'
+    inflow_bc      = grid_data.get("inflow_bc")       # None when no upstream BC
+
+    # Optional spatiotemporal field recorder (depth/velocity/discharge over time)
+    recorder = None
+    if getattr(cfg, 'SAVE_FIELDS', False):
+        from .fields import FieldRecorder
+        recorder = FieldRecorder(cfg, grid_data)
+        if not recorder.active:
+            recorder = None
+
+    # Optional virtual gauges (depth/discharge time series at fixed points)
+    gauge_rec = None
+    if getattr(cfg, 'ROUTING_GAUGES', None):
+        from .gauges import GaugeRecorder
+        gauge_rec = GaugeRecorder(cfg, grid_data)
+        if not gauge_rec.active:
+            gauge_rec = None
 
     # ── Routing scheme ────────────────────────────────────────────────────────
     scheme = getattr(cfg, 'ROUTING_SCHEME', 'kinematic').lower()
     theta  = float(getattr(cfg, 'DIFFUSION_THETA', 1.0))
     if scheme == 'diffusive':
         print(f"  Routing scheme: DIFFUSIVE wave (water-surface slope, θ={theta:g})")
+    elif scheme == 'muskingum':
+        print("  Routing scheme: MUSKINGUM–CUNGE (variable-parameter; "
+              "physical diffusion D=Q/(2BS₀), grid-independent)")
     else:
         print("  Routing scheme: KINEMATIC wave (bed slope)")
 
@@ -262,6 +290,14 @@ def run_time_loop(grid_data, cfg):
     Q_out_1d      = xp.zeros(n_cells, dtype=_dtype)   # [m³/s] outflow rate (for hydrograph)
     Q_out_vol_1d  = xp.zeros(n_cells, dtype=_dtype)   # [m³]   outflow VOLUME last step
     inflow_vol_1d = xp.zeros(n_cells, dtype=_dtype)   # [m³]   upstream inflow volume this step
+
+    # Muskingum–Cunge extra state: I₁ (previous-step inflow rate) and the previous
+    # dt (used to recover the inflow RATE I₂ = inflow_vol/dt_prev from the volume
+    # scatter without a second reduction).  O₁ is the persistent Q_out_1d above.
+    _mc          = (scheme == 'muskingum')
+    I_prev_1d    = xp.zeros(n_cells, dtype=_dtype)    # [m³/s] inflow rate previous step
+    _dt_prev_mc  = cfg.TIME_STEP_SECONDS              # [s] seeds I₂ recovery on step 0
+    _mc_neg_max  = xp.zeros((), dtype=_dtype)         # peak negative-outflow fraction
 
     hydrograph = []  # list of (time_seconds, Q_m3s) — Python floats
 
@@ -330,6 +366,7 @@ def run_time_loop(grid_data, cfg):
     mb_in   = xp.zeros((), dtype=_dtype)   # Σ effective-runoff volume entering routing [m³]
     mb_out  = xp.zeros((), dtype=_dtype)   # Σ volume leaving the domain at boundary cells [m³]
     mb_rain = xp.zeros((), dtype=_dtype)   # Σ gross rainfall volume [m³] (for runoff ratio)
+    mb_bc   = xp.zeros((), dtype=_dtype)   # Σ upstream inflow-BC volume entering routing [m³]
 
     # Flux-limiter engagement diagnostic: max per-step fraction of wet cells clipped.
     # Device 0-d scalar (xp.maximum each step), transferred to host once at the end.
@@ -368,6 +405,12 @@ def run_time_loop(grid_data, cfg):
         # ── 1. Rainfall array for this step ──────────────────────────────────
         rain_1d = precip_engine.get_field_1d(t_seconds)   # [m/s], (n_cells,)
 
+        # ── 1b. Upstream inflow boundary condition (point discharge) ─────────
+        # Per-cell external inflow RATE [m³/s] (zero except at BC cells).  dt-
+        # independent, so it is sampled here; the volume schemes multiply by the
+        # final dt and Muskingum–Cunge adds it to the lateral inflow Q_L below.
+        bc_rate_1d = inflow_bc.rate_1d(t_seconds) if inflow_bc is not None else None
+
         # ── 2. Inflow buffer: accumulates VOLUME (not rate) from upstream cells ─
         # We scatter-add Q_out_vol_1d [m³] — the volume that left each upstream
         # cell in the previous step — not the rate Q_out [m³/s].  This is the
@@ -399,7 +442,38 @@ def run_time_loop(grid_data, cfg):
         # The flux limiter already prevents numerical runaway; deeper cells
         # simply get larger Q_out and drain faster (physically correct).
 
-        if scheme == 'diffusive':
+        if _mc:
+            # Muskingum–Cunge: the state is per-cell OUTFLOW (not volume).  Recover the
+            # inflow RATES from the volume scatter (I₂ = inflow_vol/dt_prev is exact —
+            # inflow_vol = Σ upstream O·dt_prev), form the 3-point reference discharge
+            # Q_ref = (I₁+I₂+O₁)/3, and get the reference flow area A_xs from a Manning
+            # normal-depth rating.  Q_out_1d is set to Q_ref here purely as the celerity
+            # proxy for the shared adaptive-dt block below (c = 5/3·Q_ref/A_xs); the real
+            # outflow O₂ is computed once dt is final (after the boundary clamp).
+            I2_1d    = inflow_vol_1d / max(_dt_prev_mc, _eps)          # [m³/s] inflow this step
+            I1_1d    = I_prev_1d                                       # [m³/s] inflow last step
+            O1_1d    = Q_out_1d                                        # [m³/s] outflow last step
+            # Lateral inflow (effective-runoff rate) generated in the cell.  Needed
+            # here — not just for the O₂ formula — so it can FLOOR the reference
+            # discharge: a dry hillslope cell fed only by rainfall would otherwise
+            # have Q_ref=0 → c=0 → C3=0 and could never shed its lateral inflow (MC
+            # cold-start).  Flooring by Q_L gives it the celerity of a reach carrying
+            # at least its own generated runoff.  get_effective_1d needs no dt;
+            # update_state (which advances the sandbox) is deferred to volume-advance.
+            if runoff_engine is not None:
+                source_1d = runoff_engine.get_effective_1d(t_seconds, rain_1d)   # [m/s]
+            else:
+                source_1d = rain_1d
+            Q_L_1d   = source_1d * cell_area                          # [m³/s] lateral inflow
+            if bc_rate_1d is not None:
+                Q_L_1d = Q_L_1d + bc_rate_1d      # upstream BC enters as point inflow
+            Q_ref    = xp.maximum((I1_1d + I2_1d + O1_1d) / 3.0, Q_L_1d)
+            _h_nd, A_xs_1d = hydraulics.normal_depth(
+                Q_ref, slope_1d, n, width_1d, chan_mask_1d, xp)
+            c_mc_1d  = (5.0 / 3.0) * Q_ref / xp.maximum(A_xs_1d, _eps_div)
+            Q_out_1d = Q_ref
+            S_eff_1d = slope_1d
+        elif scheme == 'diffusive':
             # Diffusion wave: Manning on the water-surface slope along the flow path,
             # with conveyance on the flow-depth-over-the-higher-bed (CASC2D/GSSHA-style).
             # Returns (Q, A_xs, S_eff); channel cells use a confined rectangular section.
@@ -459,53 +533,88 @@ def run_time_loop(grid_data, cfg):
         dt = min(dt, next_output_t - t_seconds, T - t_seconds)
         dt = max(dt, _eps)
 
-        # Apply volume-conservative CFL limiter: a cell cannot eject more
-        # water than it stores in one time step (prevents Courant runaway).
-        # Inlined with xp.minimum/xp.maximum so it works on both CPU and GPU.
-        # Diagnostic: the limiter is meant to be a RARE safety net.  When the dt
-        # controller keeps the scheme inside its stability envelope only a handful
-        # of pathological cells should ever clip; a large clipped fraction signals
-        # dt is too aggressive (artificial diffusion / outlet ringing).
-        # On-device scalars (transferred to host once at the end, like the
-        # mass-balance accumulators) so the hot loop stays sync-free on GPU.
-        _q_cap     = xp.maximum(volume_1d, 0.0) / dt
-        _wet       = volume_1d > 0.0
-        _n_wet     = _wet.sum()
-        _n_clipped = ((Q_out_1d > _q_cap) & _wet).sum()
-        _frac_clip = _n_clipped / xp.maximum(_n_wet, 1)
-        _frac_clip_max_dev = xp.maximum(_frac_clip_max_dev, _frac_clip)
-        Q_out_1d = xp.minimum(Q_out_1d, _q_cap)
+        if _mc:
+            # dt is now final → compute the real Muskingum–Cunge outflow O₂ and
+            # overwrite the Q_ref proxy in Q_out_1d (source_1d / Q_L_1d were computed
+            # in the discharge branch above).  The volume flux-limiter is intentionally
+            # skipped: MC has no per-cell volume state, and clamping would reintroduce
+            # the grid-dependent numerical diffusion MC is designed to remove.
+            Q_out_1d, _mc_neg = hydraulics.muskingum_cunge_step(
+                I2_1d, I1_1d, O1_1d, Q_L_1d, c_mc_1d, A_xs_1d,
+                width_1d, slope_1d, dist_1d, dt, xp)
+            _mc_neg_max = xp.maximum(_mc_neg_max, _mc_neg)
+        else:
+            # Apply volume-conservative CFL limiter: a cell cannot eject more
+            # water than it stores in one time step (prevents Courant runaway).
+            # Inlined with xp.minimum/xp.maximum so it works on both CPU and GPU.
+            # Diagnostic: the limiter is meant to be a RARE safety net.  When the dt
+            # controller keeps the scheme inside its stability envelope only a handful
+            # of pathological cells should ever clip; a large clipped fraction signals
+            # dt is too aggressive (artificial diffusion / outlet ringing).
+            # On-device scalars (transferred to host once at the end, like the
+            # mass-balance accumulators) so the hot loop stays sync-free on GPU.
+            _q_cap     = xp.maximum(volume_1d, 0.0) / dt
+            _wet       = volume_1d > 0.0
+            _n_wet     = _wet.sum()
+            _n_clipped = ((Q_out_1d > _q_cap) & _wet).sum()
+            _frac_clip = _n_clipped / xp.maximum(_n_wet, 1)
+            _frac_clip_max_dev = xp.maximum(_frac_clip_max_dev, _frac_clip)
+            Q_out_1d = xp.minimum(Q_out_1d, _q_cap)
 
         # Convert outflow rate → volume for this step.  This is the value that
         # the NEXT step's scatter-add will use — decoupled from dt_next.
         Q_out_vol_1d = Q_out_1d * dt                 # [m³] outflow volume this step
 
-        # Volume advance
-        # If a RunoffEngine is active, convert rainfall to effective runoff first
-        # (forward Euler: query current VSA/mask, then advance sandbox state).
-        # With RUNOFF_SOURCE='none', source_1d == rain_1d (bit-identical to old code).
-        if runoff_engine is not None:
-            source_1d = runoff_engine.get_effective_1d(t_seconds, rain_1d)  # [m/s]
-            if _partition:
-                # Component rates [m/s] stashed by _opm_effective_runoff this step.
-                mb_dunne  += runoff_engine._last_dunne_rate.sum()  * (cell_area * dt)
-                mb_horton += runoff_engine._last_horton_rate.sum() * (cell_area * dt)
-                mb_imperv += runoff_engine._last_imperv_rate.sum() * (cell_area * dt)
-            runoff_engine.update_state(rain_1d, dt)
+        if _mc:
+            # MC: source_1d / Q_L were computed above.  Advance the runoff sandbox
+            # once with the final dt and accumulate the mechanism partition, then
+            # update the volume ledger.  The ledger is SIGNED (no max(·,0) clamp): a
+            # cell may briefly over-release, but that deficit is conserved globally
+            # (the water was scattered to a downstream cell), so the mass budget still
+            # closes to machine precision.  A clamp here would silently discard water.
+            if runoff_engine is not None:
+                if _partition:
+                    mb_dunne  += runoff_engine._last_dunne_rate.sum()  * (cell_area * dt)
+                    mb_horton += runoff_engine._last_horton_rate.sum() * (cell_area * dt)
+                    mb_imperv += runoff_engine._last_imperv_rate.sum() * (cell_area * dt)
+                runoff_engine.update_state(rain_1d, dt)
+            rain_vol   = source_1d * cell_area * dt      # [m³] effective runoff added
+            volume_1d  = volume_1d + rain_vol + inflow_vol_1d - Q_out_vol_1d
+            # Persist MC state for the next step: this step's inflow becomes I₁, and
+            # dt is the divisor that recovers I₂ from next step's volume scatter.
+            I_prev_1d   = I2_1d
+            _dt_prev_mc = dt
         else:
-            source_1d = rain_1d
+            # Volume advance
+            # If a RunoffEngine is active, convert rainfall to effective runoff first
+            # (forward Euler: query current VSA/mask, then advance sandbox state).
+            # With RUNOFF_SOURCE='none', source_1d == rain_1d (bit-identical to old code).
+            if runoff_engine is not None:
+                source_1d = runoff_engine.get_effective_1d(t_seconds, rain_1d)  # [m/s]
+                if _partition:
+                    # Component rates [m/s] stashed by _opm_effective_runoff this step.
+                    mb_dunne  += runoff_engine._last_dunne_rate.sum()  * (cell_area * dt)
+                    mb_horton += runoff_engine._last_horton_rate.sum() * (cell_area * dt)
+                    mb_imperv += runoff_engine._last_imperv_rate.sum() * (cell_area * dt)
+                runoff_engine.update_state(rain_1d, dt)
+            else:
+                source_1d = rain_1d
 
-        rain_vol   = source_1d * cell_area * dt      # [m³] effective runoff added
-        volume_1d  = (volume_1d
-                      + rain_vol
-                      + inflow_vol_1d               # [m³] pre-computed upstream volume
-                      - Q_out_vol_1d)               # [m³] pre-computed outflow volume
-        volume_1d  = xp.maximum(volume_1d, 0.0)     # no negative storage
+            rain_vol   = source_1d * cell_area * dt      # [m³] effective runoff added
+            volume_1d  = (volume_1d
+                          + rain_vol
+                          + inflow_vol_1d               # [m³] pre-computed upstream volume
+                          - Q_out_vol_1d)               # [m³] pre-computed outflow volume
+            if bc_rate_1d is not None:
+                volume_1d = volume_1d + bc_rate_1d * dt  # [m³] upstream BC inflow
+            volume_1d  = xp.maximum(volume_1d, 0.0)     # no negative storage
 
         # ── Mass-balance accumulation (device reductions; transferred once at end) ──
         mb_in   += rain_vol.sum()                              # effective runoff entering routing
         mb_out  += (Q_out_vol_1d * boundary_f).sum()          # volume leaving the domain [m³]
         mb_rain += rain_1d.sum() * (cell_area * dt)           # gross rainfall (for runoff ratio)
+        if bc_rate_1d is not None:
+            mb_bc += bc_rate_1d.sum() * dt                    # upstream BC inflow [m³]
         _out_vol_dev += Q_out_vol_1d[outlet_pos]              # outlet outflow volume this step [m³]
 
         # ── Advance simulation time and accumulate step statistics ───────────
@@ -532,6 +641,13 @@ def run_time_loop(grid_data, cfg):
 
         if _at_output:
             hydrograph.append((t_seconds, Q_outlet))
+            if recorder is not None:
+                # depth_1d / Q_out_1d / A_xs_1d are this step's (start-of-step
+                # depth → resulting discharge); volume_1d is end-of-step.
+                recorder.record(t_seconds, depth_1d, Q_out_1d, A_xs_1d,
+                                volume_1d, xp)
+            if gauge_rec is not None:
+                gauge_rec.record(t_seconds, depth_1d, Q_out_1d, A_xs_1d, xp)
             if _partition:
                 # Cumulative mechanism volumes [m³] at the hydrograph cadence —
                 # one D→H transfer per recorded row (cheap, same rate as Q).
@@ -563,11 +679,21 @@ def run_time_loop(grid_data, cfg):
     # Flux-limiter engagement: a stable dt keeps this near zero; a large peak
     # fraction means the limiter (not the wave equation) is doing the routing,
     # i.e. dt is too aggressive for the chosen scheme.
-    _frac_clip_max = float(_frac_clip_max_dev.item())
-    print(f"  Flux limiter   |  peak {100.0*_frac_clip_max:.2f}% of wet cells clipped in a step")
-    if _frac_clip_max > 0.02:
-        print(f"  [WARNING] Flux limiter clipped >2% of wet cells — dt is marginal; "
-              f"lower CFL_TARGET or (static mode) TIME_STEP_SECONDS.")
+    if _mc:
+        # MC has no volume flux-limiter; its resolution diagnostic is how often the
+        # raw O₂ went negative (Cr+Dg<1) and was floored at 0.  A small fraction is
+        # the harmless classic MC dip; a large one means dt/dx under-resolves the wave.
+        _neg_pct = 100.0 * float(_mc_neg_max.item())
+        print(f"  Muskingum–Cunge |  peak {_neg_pct:.2f}% of cells had raw O₂<0 (floored to 0)")
+        if _neg_pct > 5.0:
+            print("  [NOTE] >5% of cells hit the O₂≥0 floor (Cr+Dg<1, under-resolved) — "
+                  "raise CFL_TARGET toward 1.0 for a sharper, less-clipped wave.")
+    else:
+        _frac_clip_max = float(_frac_clip_max_dev.item())
+        print(f"  Flux limiter   |  peak {100.0*_frac_clip_max:.2f}% of wet cells clipped in a step")
+        if _frac_clip_max > 0.02:
+            print(f"  [WARNING] Flux limiter clipped >2% of wet cells — dt is marginal; "
+                  f"lower CFL_TARGET or (static mode) TIME_STEP_SECONDS.")
 
     # ── Mass balance ─────────────────────────────────────────────────────────
     # Budget on the routed water:  INPUT − OUTFLOW − STORAGE = ERROR.
@@ -579,10 +705,12 @@ def run_time_loop(grid_data, cfg):
     inflight   = float((Q_out_vol_1d[valid_ds].sum()).item())   # already [m³]
     storage    = float(volume_1d.sum().item()) + inflight
     input_m3   = float(mb_in.item())
+    bc_m3      = float(mb_bc.item())          # upstream inflow-BC volume [m³]
     outflow_m3 = float(mb_out.item())
     rain_m3    = float(mb_rain.item())
-    error_m3   = input_m3 - outflow_m3 - storage
-    rel_error  = error_m3 / input_m3 if input_m3 > 0 else 0.0
+    total_in   = input_m3 + bc_m3             # everything entering the routed domain
+    error_m3   = total_in - outflow_m3 - storage
+    rel_error  = error_m3 / total_in if total_in > 0 else 0.0
     runoff_ratio = input_m3 / rain_m3 if rain_m3 > 0 else 0.0
     status     = "PASS" if abs(rel_error) < 1e-6 else "WARN"
 
@@ -591,6 +719,8 @@ def run_time_loop(grid_data, cfg):
     print("=" * 60)
     print(f"  Gross rainfall     : {rain_m3:16.3f} m³")
     print(f"  Effective runoff IN: {input_m3:16.3f} m³   (runoff ratio {runoff_ratio:.3f})")
+    if bc_m3:
+        print(f"  Upstream inflow IN : {bc_m3:16.3f} m³")
     print(f"  Outflow at boundary: {outflow_m3:16.3f} m³")
     print(f"  Storage (end+transit): {storage:14.3f} m³")
     print(f"  Closure error      : {error_m3:16.3f} m³   ({100.0*rel_error:+.2e} % of input)  [{status}]")
@@ -623,7 +753,13 @@ def run_time_loop(grid_data, cfg):
     if getattr(cfg, 'MASS_BALANCE_REPORT', True):
         append_mass_balance_csv(cfg, scheme, theta, rain_m3, input_m3,
                                  outflow_m3, storage, error_m3, rel_error,
-                                 runoff_ratio, partition)
+                                 runoff_ratio, partition, bc_m3=bc_m3)
+
+    # ── Persist spatiotemporal fields (depth/velocity/discharge over time) ────
+    if recorder is not None:
+        recorder.save()
+    if gauge_rec is not None:
+        gauge_rec.save()
 
     return hydrograph
 

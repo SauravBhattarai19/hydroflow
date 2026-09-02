@@ -3,19 +3,32 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vsa-opm"
-version = "2.0.0"
-description = "Variable Source Area / One-Parameter Model (VSA-OPM) distributed hydrologic model: DEM preprocessing, gauge/IMERG precipitation, VSA + Green-Ampt + impervious runoff generation, and kinematic/diffusive-wave routing."
+name = "hydroflow"
+version = "0.1.0"
+description = "hydroflow: a distributed, physics-based hydrological + hydrodynamic model — DEM preprocessing, gauge/IMERG precipitation, VSA + Green-Ampt + impervious runoff generation, and kinematic/diffusive-wave/Muskingum–Cunge routing, with optional Google Earth Engine forcing and CPU/GPU backends."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
     { name = "Saurav Bhattarai", email = "bhattaraisaurav36@gmail.com" },
 ]
-keywords = ["hydrology", "watershed", "runoff", "routing", "kinematic wave", "VSA", "OPM"]
+keywords = [
+    "hydrology", "hydrodynamics", "watershed", "runoff", "flood",
+    "routing", "kinematic wave", "diffusive wave", "muskingum-cunge",
+    "VSA", "OPM", "green-ampt", "GIS", "rainfall-runoff", "earth-engine",
+]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Hydrology",
+    "Topic :: Scientific/Engineering :: GIS",
 ]
 
 dependencies = [
@@ -28,6 +41,7 @@ dependencies = [
     "shapely",
     "pyproj",
     "pysheds",
+    "pyflwdir",
     "fiona",
     "pyyaml",
 ]
@@ -39,14 +53,18 @@ gpu = ["cupy-cuda12x"]
 gee = ["earthengine-api"]
 
 [project.scripts]
-vsa-opm = "vsa_opm.cli.main:main"
+hydroflow = "hydroflow.cli.main:main"
+# Legacy alias — kept so existing invocations keep working after the rename.
+vsa-opm = "hydroflow.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model"
+Documentation = "https://sauravbhattarai19.github.io/One-Parameter-Hydrologic-Model/"
 Issues = "https://github.com/SauravBhattarai19/One-Parameter-Hydrologic-Model/issues"
 
 [tool.setuptools.packages.find]
-include = ["vsa_opm*"]
+# hydroflow* = the model package; vsa_opm = the deprecated back-compat shim.
+include = ["hydroflow*", "vsa_opm*"]
 
 [tool.setuptools.package-data]
-vsa_opm = ["data/*.csv"]
+hydroflow = ["data/*.csv"]

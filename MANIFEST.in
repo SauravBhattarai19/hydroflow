@@ -1,0 +1,16 @@
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include hydroflow/data *.csv
+recursive-include configs *.yaml *.yml *.json
+
+# Keep build noise out of the sdist.
+global-exclude *.pyc
+global-exclude __pycache__/*
+prune tests
+prune docs
+prune study
+prune qgis_plugin
+prune _plugin_build
+prune tools
+prune runs

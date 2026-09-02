@@ -76,6 +76,92 @@ _LANDSAT_OFFSET = -0.2
 _LCZ_COLLECTION = "RUB/RUBCLIM/LCZ/global_lcz_map/latest"
 
 
+def _download_aligned_image(img, dem_path, geometry, output_path, n_bands=1,
+                            max_pixels_per_tile_per_band=4_000_000):
+    """
+    Download *img*, pixel-aligned to *dem_path* (same crs/crs_transform/
+    dimensions convention every function in this module uses), clipped to
+    *geometry*.  Auto-tiles + mosaics when the request would exceed GEE's
+    ~50MB ``getDownloadURL`` cap (empirically ~9-9.5 bytes/pixel/band for
+    GEO_TIFF exports) — small requests take the original single-call path
+    unchanged (byte-identical behaviour for existing basins), larger ones
+    split into a grid of ``crs_transform``-shifted sub-tiles and mosaic with
+    ``rasterio.merge``.  Mirrors the tiling ``dem_gee.py`` already does for
+    ``region``+``scale`` downloads, adapted here for the
+    ``crs_transform``+``dimensions`` alignment mode this module's ancillary
+    rasters use instead.
+
+    Returns *output_path* on success, None on failure.
+    """
+    import math
+    import tempfile
+    import urllib.request
+    import rasterio
+    from rasterio.merge import merge as rio_merge
+
+    with rasterio.open(dem_path) as dem:
+        crs = str(dem.crs)
+        t = dem.transform
+        width, height = dem.width, dem.height
+
+    total_px = width * height
+    max_px_per_tile = max(1, max_pixels_per_tile_per_band // max(1, n_bands))
+    n_tiles = max(1, math.ceil(total_px / max_px_per_tile))
+    side = max(1, math.ceil(math.sqrt(n_tiles)))
+    nx, ny = side, side
+
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+
+    if nx == 1 and ny == 1:
+        crs_transform = [t.a, t.b, t.c, t.d, t.e, t.f]
+        url = img.clip(geometry).getDownloadURL({
+            'crs': crs, 'crs_transform': crs_transform,
+            'dimensions': [width, height], 'format': 'GEO_TIFF',
+        })
+        urllib.request.urlretrieve(url, output_path)
+        return output_path
+
+    logger.info("Request too large for one GEE download (~%.1fM px) — "
+               "tiling %dx%d and mosaicking.", total_px / 1e6, nx, ny)
+    tile_w = math.ceil(width / nx)
+    tile_h = math.ceil(height / ny)
+
+    tile_paths = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for ix in range(nx):
+            for iy in range(ny):
+                col0, row0 = ix * tile_w, iy * tile_h
+                w = min(tile_w, width - col0)
+                h = min(tile_h, height - row0)
+                if w <= 0 or h <= 0:
+                    continue
+                tile_transform = [
+                    t.a, t.b, t.c + col0 * t.a + row0 * t.b,
+                    t.d, t.e, t.f + col0 * t.d + row0 * t.e,
+                ]
+                tile_path = os.path.join(tmpdir, f"tile_{ix}_{iy}.tif")
+                url = img.clip(geometry).getDownloadURL({
+                    'crs': crs, 'crs_transform': tile_transform,
+                    'dimensions': [w, h], 'format': 'GEO_TIFF',
+                })
+                urllib.request.urlretrieve(url, tile_path)
+                tile_paths.append(tile_path)
+                logger.info("  tile %d/%d downloaded (%dx%d)", len(tile_paths), nx * ny, w, h)
+
+        srcs = [rasterio.open(p) for p in tile_paths]
+        mosaic, out_transform = rio_merge(srcs)
+        profile = srcs[0].profile.copy()
+        profile.update(height=mosaic.shape[1], width=mosaic.shape[2],
+                       transform=out_transform, count=mosaic.shape[0])
+        for s in srcs:
+            s.close()
+        with rasterio.open(output_path, 'w', **profile) as dst:
+            dst.write(mosaic)
+
+    logger.info("Downloaded+mosaicked (%d tiles): %s", len(tile_paths), output_path)
+    return output_path
+
+
 def _get_land_cover_image(lulc_source, geometry=None):
     """
     Raw land cover class image for the given source (band renamed to 'Map').
@@ -240,29 +326,12 @@ def download_lulc_raster(dem_path, watershed_geojson_path, output_path,
         return None
 
     try:
-        import rasterio
-        import urllib.request
-
         geometry = _load_watershed_geometry(watershed_geojson_path)
         lulc = ee.Image('ESA/WorldCover/v200/2021').select('Map')
 
-        with rasterio.open(dem_path) as dem:
-            crs = str(dem.crs)
-            t = dem.transform
-            crs_transform = [t.a, t.b, t.c, t.d, t.e, t.f]
-            dimensions = [dem.width, dem.height]
-
-        url = lulc.clip(geometry).getDownloadURL({
-            'crs': crs,
-            'crs_transform': crs_transform,
-            'dimensions': dimensions,
-            'format': 'GEO_TIFF',
-        })
-
-        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-        urllib.request.urlretrieve(url, output_path)
+        result = _download_aligned_image(lulc, dem_path, geometry, output_path, n_bands=1)
         logger.info("LULC raster downloaded: %s", output_path)
-        return output_path
+        return result
 
     except Exception as exc:
         logger.warning("GEE LULC download failed: %s", exc)
@@ -292,32 +361,15 @@ def download_lcz_raster(dem_path, watershed_geojson_path, output_path,
         return None
 
     try:
-        import rasterio
-        import urllib.request
-
         geometry = _load_watershed_geometry(watershed_geojson_path)
         lcz = (ee.ImageCollection(_LCZ_COLLECTION)
                .filterBounds(geometry)
                .mosaic()
                .select('LCZ_Filter'))
 
-        with rasterio.open(dem_path) as dem:
-            crs = str(dem.crs)
-            t = dem.transform
-            crs_transform = [t.a, t.b, t.c, t.d, t.e, t.f]
-            dimensions = [dem.width, dem.height]
-
-        url = lcz.clip(geometry).getDownloadURL({
-            'crs': crs,
-            'crs_transform': crs_transform,
-            'dimensions': dimensions,
-            'format': 'GEO_TIFF',
-        })
-
-        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-        urllib.request.urlretrieve(url, output_path)
+        result = _download_aligned_image(lcz, dem_path, geometry, output_path, n_bands=1)
         logger.info("LCZ raster downloaded: %s", output_path)
-        return output_path
+        return result
 
     except Exception as exc:
         logger.warning("GEE LCZ download failed: %s", exc)
@@ -347,9 +399,6 @@ def download_deficit_raster(dem_path, watershed_geojson_path, output_path,
         return None
 
     try:
-        import rasterio
-        import urllib.request
-
         geometry = _load_watershed_geometry(watershed_geojson_path)
 
         band = _DEPTH_BANDS.get(soil_depth_band, 'val_15_30cm_mean')
@@ -391,23 +440,9 @@ def download_deficit_raster(dem_path, watershed_geojson_path, output_path,
         deficit = porosity.subtract(theta).max(0) \
             .multiply(root_depth).rename('deficit')
 
-        with rasterio.open(dem_path) as dem:
-            crs = str(dem.crs)
-            t = dem.transform
-            crs_transform = [t.a, t.b, t.c, t.d, t.e, t.f]
-            dimensions = [dem.width, dem.height]
-
-        url = deficit.clip(geometry).getDownloadURL({
-            'crs': crs,
-            'crs_transform': crs_transform,
-            'dimensions': dimensions,
-            'format': 'GEO_TIFF',
-        })
-
-        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-        urllib.request.urlretrieve(url, output_path)
+        result = _download_aligned_image(deficit, dem_path, geometry, output_path, n_bands=1)
         logger.info("Deficit raster downloaded: %s", output_path)
-        return output_path
+        return result
 
     except Exception as exc:
         logger.warning("GEE deficit raster download failed: %s", exc)
@@ -442,9 +477,6 @@ def download_ksat_raster(dem_path, watershed_geojson_path, output_path,
         return None
 
     try:
-        import rasterio
-        import urllib.request
-
         geometry = _load_watershed_geometry(watershed_geojson_path)
 
         ksat_col = ee.ImageCollection(
@@ -454,23 +486,9 @@ def download_ksat_raster(dem_path, watershed_geojson_path, output_path,
         ksat_mmhr = ksat_col.mosaic().multiply(0.0001) \
             .multiply(10.0 / 24.0).rename('ksat_mmhr')
 
-        with rasterio.open(dem_path) as dem:
-            crs = str(dem.crs)
-            t = dem.transform
-            crs_transform = [t.a, t.b, t.c, t.d, t.e, t.f]
-            dimensions = [dem.width, dem.height]
-
-        url = ksat_mmhr.clip(geometry).getDownloadURL({
-            'crs': crs,
-            'crs_transform': crs_transform,
-            'dimensions': dimensions,
-            'format': 'GEO_TIFF',
-        })
-
-        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-        urllib.request.urlretrieve(url, output_path)
+        result = _download_aligned_image(ksat_mmhr, dem_path, geometry, output_path, n_bands=1)
         logger.info("Ksat raster downloaded: %s", output_path)
-        return output_path
+        return result
 
     except Exception as exc:
         logger.warning("GEE Ksat raster download failed: %s", exc)
@@ -499,9 +517,6 @@ def download_texture_raster(dem_path, watershed_geojson_path, output_path,
         return None
 
     try:
-        import rasterio
-        import urllib.request
-
         geometry = _load_watershed_geometry(watershed_geojson_path)
         suf = _TEXTURE_DEPTH.get(soil_depth_band, '15-30cm_mean')
         sand = ee.Image('projects/soilgrids-isric/sand_mean') \
@@ -510,23 +525,9 @@ def download_texture_raster(dem_path, watershed_geojson_path, output_path,
             .select(f'clay_{suf}').multiply(0.1).rename('clay_pct')
         img = sand.addBands(clay)
 
-        with rasterio.open(dem_path) as dem:
-            crs = str(dem.crs)
-            t = dem.transform
-            crs_transform = [t.a, t.b, t.c, t.d, t.e, t.f]
-            dimensions = [dem.width, dem.height]
-
-        url = img.clip(geometry).getDownloadURL({
-            'crs': crs,
-            'crs_transform': crs_transform,
-            'dimensions': dimensions,
-            'format': 'GEO_TIFF',
-        })
-
-        os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-        urllib.request.urlretrieve(url, output_path)
+        result = _download_aligned_image(img, dem_path, geometry, output_path, n_bands=2)
         logger.info("Texture raster downloaded: %s", output_path)
-        return output_path
+        return result
 
     except Exception as exc:
         logger.warning("GEE texture raster download failed: %s", exc)

@@ -24,7 +24,7 @@ import os
 
 from qgis.PyQt.QtWidgets import (
     QWidget, QFormLayout, QGroupBox, QVBoxLayout, QHBoxLayout,
-    QPushButton, QDoubleSpinBox, QLabel,
+    QPushButton, QDoubleSpinBox, QLabel, QComboBox,
 )
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.gui import QgsFileWidget, QgsProjectionSelectionWidget, QgsMapToolEmitPoint
@@ -70,6 +70,28 @@ class TabDem(QWidget):
         self.crs_widget.setCrs(QgsCoordinateReferenceSystem("EPSG:32645"))
         self.crs_widget.crsChanged.connect(self._invalidate_terrain)
         form_dem.addRow("Target CRS:", self.crs_widget)
+
+        self.engine_combo = QComboBox()
+        # (display label, underlying vsa_opm.config.OpmConfig.DELINEATION_ENGINE value)
+        self._ENGINE_CHOICES = [
+            ("pyflwdir  (recommended)", "pyflwdir"),
+            ("pysheds  (legacy)", "pysheds"),
+        ]
+        for label, _value in self._ENGINE_CHOICES:
+            self.engine_combo.addItem(label)
+        self.engine_combo.setCurrentIndex(0)   # pyflwdir by default
+        self.engine_combo.setToolTip(
+            "Delineation engine used by both steps below.\n\n"
+            "pyflwdir (default): priority-flood depression filling. Correctly "
+            "routes flow across large flat areas — reservoirs, lakes, wide "
+            "floodplains — that can silently disconnect the upstream basin "
+            "with the legacy engine.\n\n"
+            "pysheds (legacy): the original engine. Kept for basins already "
+            "validated against it, or if pyflwdir cannot be installed on this "
+            "system."
+        )
+        self.engine_combo.currentIndexChanged.connect(self._invalidate_terrain)
+        form_dem.addRow("Delineation engine:", self.engine_combo)
 
         self.analyze_btn = QPushButton("🏔  Analyze terrain")
         self.analyze_btn.setToolTip(
@@ -242,6 +264,9 @@ class TabDem(QWidget):
     def get_target_crs(self) -> str:
         return self.crs_widget.crs().authid()
 
+    def get_delineation_engine(self) -> str:
+        return self._ENGINE_CHOICES[self.engine_combo.currentIndex()][1]
+
     def get_outlet_point(self) -> tuple:
         return (self.lat_spin.value(), self.lon_spin.value())
 
@@ -260,6 +285,11 @@ class TabDem(QWidget):
         self.lon_spin.setValue(lon)
         if cfg.OUTPUT_DIR:
             self.output_dir_widget.setFilePath(cfg.OUTPUT_DIR)
+        engine = getattr(cfg, "DELINEATION_ENGINE", "pyflwdir")
+        for i, (_label, value) in enumerate(self._ENGINE_CHOICES):
+            if value == engine:
+                self.engine_combo.setCurrentIndex(i)
+                break
 
     def write_to_config(self, cfg):
         """Write widget values into an OpmConfig object."""
@@ -267,4 +297,5 @@ class TabDem(QWidget):
         cfg.TARGET_CRS_EPSG = self.get_target_crs()
         cfg.OUTPUT_POINT = self.get_outlet_point()
         cfg.OUTPUT_DIR = self.get_output_dir()
+        cfg.DELINEATION_ENGINE = self.get_delineation_engine()
         cfg.update_output_paths()

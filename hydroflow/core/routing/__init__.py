@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-vsa_opm.core.routing — the flood-routing engine.
+hydroflow.core.routing — the flood-routing engine.
 
 Modules
 -------
@@ -16,7 +16,7 @@ reporting  : hydrograph CSV, VSA partition series, mass-balance ledger.
 gpu        : CuPy-vectorized variants of the terrain kernels.
 
 The flat namespace below mirrors the historical `routing_utils` module, so
-`from vsa_opm.core import routing as ru` exposes the same API.
+`from hydroflow.core import routing as ru` exposes the same API.
 """
 
 from .terrain import (
@@ -33,6 +33,8 @@ from .hydraulics import (
     cell_discharge,
     mannings_discharge,
     diffusive_wave_discharge,
+    normal_depth,
+    muskingum_cunge_step,
     flux_limiter,
     build_rainfall_array,
 )
@@ -49,7 +51,8 @@ __all__ = [
     "D8_MOVE", "D8_DIAGONAL", "load_rasters", "compute_slope_grid",
     "topological_order", "build_downstream_map", "compute_strahler_order",
     "mannings_velocity", "cell_discharge", "mannings_discharge",
-    "diffusive_wave_discharge", "flux_limiter", "build_rainfall_array",
+    "diffusive_wave_discharge", "normal_depth", "muskingum_cunge_step",
+    "flux_limiter", "build_rainfall_array",
     "resolve_mannings_n", "resolve_lulc_field", "resolve_impervious_fraction",
     "build_channel_geometry", "initialise_grid", "run_time_loop", "main",
     "save_hydrograph", "write_partition_series", "append_mass_balance_csv",

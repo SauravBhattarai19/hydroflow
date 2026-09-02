@@ -9,9 +9,15 @@ Modes: none · coefficient · raster · scs_cn · vsa_opm
 The vsa_opm panel uses PROGRESSIVE DISCLOSURE — only the fields relevant to the
 current choices are shown:
   • SD source = GEE/SERVES  → hide manual SD_max & phi, show SERVES options.
-  • Horton mechanism off    → hide the whole Green-Ampt group.
+  • Horton mechanism off AND sandbox cap off → hide the whole Green-Ampt group
+    (it's shown if EITHER is on, since both consume the same GA parameters).
   • Impervious mechanism off → hide the whole impervious group.
   • A "…source" set to raster → show its file picker; scalar → show its value.
+
+Note: "Horton (Green-Ampt)" (whether Horton's own runoff is reported) and
+"Cap sandbox recharge by infiltration" (whether the VSA sandbox's water
+balance respects infiltration physics) are independent toggles — see
+vsa_opm/core/runoff/vsa.py and OPM_INFILTRATION's docstring in config.py.
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -163,6 +169,31 @@ class TabRunoff(QWidget):
         h_mech.addStretch()
         v.addWidget(grp_mech)
 
+        # ── Sandbox recharge physics (independent of the Horton mechanism) ──
+        # This is NOT a 4th mechanism: it controls whether the VSA sandbox's
+        # OWN water balance (which sets the saturated-area size) is capped by
+        # Green-Ampt infiltration capacity, or recharges from uncapped
+        # rainfall.  Historically this was silently tied to the Horton
+        # checkbox above; it is now independent, matching OPM_INFILTRATION.
+        grp_sandbox_phys = QGroupBox("VSA Sandbox Recharge Physics")
+        h_sandbox_phys = QHBoxLayout(grp_sandbox_phys)
+        self._chk_sandbox_cap = QCheckBox(
+            "Cap sandbox recharge by infiltration capacity (physically realistic)")
+        self._chk_sandbox_cap.setChecked(True)
+        self._chk_sandbox_cap.setToolTip(
+            "When ON, the VSA sandbox's recharge at each zone's divide cell is\n"
+            "capped by Green-Ampt infiltration capacity (cfg.OPM_INFILTRATION =\n"
+            "'green_ampt') -- the saturated area grows realistically, whether or\n"
+            "not the Horton mechanism above is also selected. When OFF, the\n"
+            "sandbox recharges from uncapped rainfall (cfg.OPM_INFILTRATION =\n"
+            "'none') -- unphysical, but kept for backward compatibility / testing.\n"
+            "Independent of the Horton checkbox, which only controls whether\n"
+            "Horton's OWN infiltration-excess runoff is added to the output."
+        )
+        h_sandbox_phys.addWidget(self._chk_sandbox_cap)
+        h_sandbox_phys.addStretch()
+        v.addWidget(grp_sandbox_phys)
+
         # ── Core OPM parameters ────────────────────────────────────────────
         grp_core = QGroupBox("Core OPM Parameters  (Pradhan & Ogden 2010)")
         self._core_form = QFormLayout(grp_core)
@@ -293,6 +324,7 @@ class TabRunoff(QWidget):
     def _wire_disclosure(self):
         self._sd_source.currentIndexChanged.connect(self._apply_disclosure)
         self._chk_horton.toggled.connect(self._apply_disclosure)
+        self._chk_sandbox_cap.toggled.connect(self._apply_disclosure)
         self._chk_imperv.toggled.connect(self._apply_disclosure)
         self._suction_source.currentIndexChanged.connect(self._apply_disclosure)
         self._ksat_source.currentIndexChanged.connect(self._apply_disclosure)
@@ -305,10 +337,14 @@ class TabRunoff(QWidget):
         _set_row_visible(self._core_form, self._phi, not gee_sd)
         self._grp_serves.setVisible(gee_sd)
 
-        # Green-Ampt only when Horton is active.
+        # Green-Ampt parameters are needed whenever EITHER Horton's own
+        # runoff is being reported OR the sandbox recharge cap is on -- both
+        # consume the same suction/Ksat/texture machinery.
         horton = self._chk_horton.isChecked()
-        self._grp_ga.setVisible(horton)
-        if horton:
+        sandbox_cap = self._chk_sandbox_cap.isChecked()
+        ga_active = horton or sandbox_cap
+        self._grp_ga.setVisible(ga_active)
+        if ga_active:
             scalar_psi = self._suction_source.currentIndex() == 0
             _set_row_visible(self._ga_form, self._suction_m, scalar_psi)
             ksat_scalar = self._ksat_source.currentIndex() == 0
@@ -361,8 +397,11 @@ class TabRunoff(QWidget):
         infilt = getattr(cfg, "OPM_INFILTRATION", "none")
         imp_src = getattr(cfg, "IMPERVIOUS_SOURCE", "none") or "none"
         self._chk_vsa.setChecked("vsa" in mechs)
-        self._chk_horton.setChecked("horton" in mechs or infilt == "green_ampt")
+        self._chk_horton.setChecked("horton" in mechs)
         self._chk_imperv.setChecked("impervious" in mechs or imp_src != "none")
+        # Sandbox recharge cap is read directly from OPM_INFILTRATION,
+        # independent of the Horton mechanism checkbox above.
+        self._chk_sandbox_cap.setChecked(infilt == "green_ampt")
 
         self._sd_max.setValue(cfg.OPM_SD_MAX_INITIAL)
         self._q_max.setValue(cfg.OPM_Q_MAX)
@@ -417,8 +456,9 @@ class TabRunoff(QWidget):
         cfg.SERVES_SEARCH_WINDOW = self._search_window.value()
         cfg.OPM_SOILGRIDS_DEPTH = self._soilgrids_depth.currentText()
 
-        # Green-Ampt is enabled by the Horton mechanism.
-        cfg.OPM_INFILTRATION = "green_ampt" if self._chk_horton.isChecked() else "none"
+        # OPM_INFILTRATION is authoritative and independent of the Horton
+        # mechanism checkbox -- it controls the VSA sandbox's own recharge cap.
+        cfg.OPM_INFILTRATION = "green_ampt" if self._chk_sandbox_cap.isChecked() else "none"
         cfg.OPM_GA_SUCTION_SOURCE = self._SUCTION_SOURCES[self._suction_source.currentIndex()]
         cfg.OPM_GA_SUCTION_M = self._suction_m.value()
         cfg.OPM_GA_KSAT_SOURCE = self._KSAT_SOURCES[self._ksat_source.currentIndex()]

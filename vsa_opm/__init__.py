@@ -1,30 +1,40 @@
 # -*- coding: utf-8 -*-
 """
-vsa_opm — Variable Source Area / One-Parameter Model (Pradhan & Ogden 2010)
-distributed hydrologic model.
+vsa_opm  (compatibility shim)
+=============================
+This package was renamed **vsa_opm → hydroflow**.  It is kept only so existing
+code (`import vsa_opm`, `from vsa_opm.config import OpmConfig`,
+`from vsa_opm.core.routing import router`, …) keeps working.
 
-Subpackages
------------
-core   : the science — DEM preprocessing, precipitation, runoff generation
-         (VSA / Green-Ampt / impervious), kinematic/diffusive-wave routing.
-         Pure NumPy/SciPy/rasterio; no QGIS, no Qt.
-gee    : Google Earth Engine integrations (IMERG rainfall, SERVES deficit,
-         SoilGrids, LULC/LCZ).  Optional; requires earthengine-api.
-utils  : shared helpers (CPU/GPU backend selection).
-cli    : the ``vsa-opm`` command-line interface (config-file driven runs).
-
-Quick start
------------
-    from vsa_opm import OpmConfig, run_pipeline
-
-    cfg = OpmConfig(DEM_PATH="dem.tif", OUTPUT_DIR="results/")
-    cfg.update_output_paths()
-    results = run_pipeline(cfg, stages=("process_dem", "routing"))
+Importing it installs a redirect that maps every ``vsa_opm.*`` import to the
+matching ``hydroflow.*`` module and emits a single ``DeprecationWarning``.
+New code should ``import hydroflow`` directly.
 """
 
-__version__ = "2.0.0"
+import warnings
 
-from .config import OpmConfig
-from .pipeline import run_pipeline, DEFAULT_STAGES
+from hydroflow._compat import install as _install
 
-__all__ = ["OpmConfig", "run_pipeline", "DEFAULT_STAGES", "__version__"]
+# Register the sys.meta_path finder so lazy submodule imports
+# (vsa_opm.config, vsa_opm.core.routing.router, …) resolve to hydroflow.*
+_install()
+
+warnings.warn(
+    "The 'vsa_opm' package has been renamed to 'hydroflow'; "
+    "'import vsa_opm' still works but is deprecated. "
+    "Please update your imports to 'hydroflow'.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Re-export the public API so `from vsa_opm import OpmConfig, run_pipeline` works
+# without going through the submodule finder.
+from hydroflow import (  # noqa: E402,F401
+    Config,
+    OpmConfig,
+    run_pipeline,
+    DEFAULT_STAGES,
+    __version__,
+)
+
+__all__ = ["Config", "OpmConfig", "run_pipeline", "DEFAULT_STAGES", "__version__"]

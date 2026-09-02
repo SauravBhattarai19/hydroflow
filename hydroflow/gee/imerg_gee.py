@@ -56,7 +56,7 @@ _GETREGION_COLS        = 5          # id, lon, lat, time, precipitation
 def _resolve_paths(cfg):
     """Return (imerg_dir, gauges_path, timeseries_path, meta_path)."""
     imerg_dir = getattr(cfg, 'PRECIP_IMERG_DIR', None) \
-        or (getattr(cfg, 'OUTPUT_DIR', 'output/') + 'imerg/')
+        or os.path.join(getattr(cfg, 'OUTPUT_DIR', 'output/'), 'imerg/')
     return (
         imerg_dir,
         os.path.join(imerg_dir, 'gauges.csv'),

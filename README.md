@@ -1,10 +1,15 @@
-# OPM — One-Parameter Hydrologic Model
+# hydroflow — distributed hydrological + hydrodynamic model
 
 A distributed, physics-based rainfall–runoff and flood-routing model built around
 a **Variable Source Area (VSA)** runoff scheme, Green-Ampt infiltration, and
-explicit kinematic/diffusive-wave channel routing — driven by open satellite
+explicit kinematic / diffusive-wave / Muskingum–Cunge channel routing — driven by open satellite
 data (SERVES soil moisture, IMERG precipitation, SoilGrids, LULC/LCZ) via
 Google Earth Engine.
+
+> **Renamed:** this package used to be `vsa_opm`. It is now **`hydroflow`**
+> (`pip install hydroflow`, `import hydroflow`). `import vsa_opm` and the
+> `OpmConfig` class still work as deprecated aliases — see
+> [Migrating from `vsa_opm`](#migrating-from-vsa_opm).
 
 ## 📖 Learn the model — interactive course
 
@@ -22,17 +27,23 @@ no installation required:
 | 3 | Rainfall–Runoff Generation (VSA, Green-Ampt, impervious shedding, satellite pipeline) |
 | 4 | Kinematic-Wave Routing (Saint-Venant simplification, Manning's equation) |
 | 5 | Diffusive-Wave Routing (backwater effects, GSSHA-style conveyance, numerical diffusion) |
+| 6 | Muskingum–Cunge Routing (variable-parameter; numerical diffusion tuned to physical diffusivity D=Q/(2·B·S₀), grid-independent) |
 
 If you're new to this repo, start there before digging into the code below.
 
 ## Installation
 
-The model is a pip-installable package (`vsa_opm`):
+The model is a pip-installable package (`hydroflow`):
 
 ```bash
-pip install .            # core (CPU)
-pip install .[gpu]       # + CuPy/CUDA acceleration
-pip install .[gee]       # + Google Earth Engine (IMERG, SERVES, SoilGrids, LULC/LCZ)
+pip install hydroflow          # core (CPU), from PyPI
+pip install hydroflow[gpu]     # + CuPy/CUDA acceleration
+pip install hydroflow[gee]     # + Google Earth Engine (IMERG, SERVES, SoilGrids, LULC/LCZ)
+
+# or from a checkout of this repo:
+pip install .
+pip install .[gpu]
+pip install .[gee]
 ```
 
 ## Running the model
@@ -42,9 +53,9 @@ One core drives three interfaces:
 **1. Python API**
 
 ```python
-from vsa_opm import OpmConfig, run_pipeline
+from hydroflow import Config, run_pipeline
 
-cfg = OpmConfig(DEM_PATH="dem.tif", OUTPUT_DIR="results/")
+cfg = Config(DEM_PATH="dem.tif", OUTPUT_DIR="results/")
 cfg.update_output_paths()
 results = run_pipeline(cfg, stages=("process_dem", "routing"))
 ```
@@ -52,16 +63,39 @@ results = run_pipeline(cfg, stages=("process_dem", "routing"))
 **2. CLI** — config-file driven (YAML, JSON, or a legacy flat `.py` module):
 
 ```bash
-vsa-opm init-config -o my_run.yaml     # template with every parameter
-vsa-opm validate -c my_run.yaml        # pre-flight checks
-vsa-opm run -c my_run.yaml             # process_dem + routing
+hydroflow init-config -o my_run.yaml     # template with every parameter
+hydroflow validate -c my_run.yaml        # pre-flight checks
+hydroflow run -c my_run.yaml             # process_dem + routing
+hydroflow list-options                   # show fixed-choice options + integer codes
 ```
 
 See [`configs/example_config.yaml`](configs/example_config.yaml) for the
 repository's research scenario in CLI form.
 
+### Choosing options — string *or* integer code
+
+Every fixed-choice option accepts either its string value **or** a short
+integer code, so these are equivalent:
+
+```python
+Config(PRECIP_METHOD="thiessen", ROUTING_SCHEME="muskingum", BACKEND="gpu")
+Config(PRECIP_METHOD=1,          ROUTING_SCHEME=2,           BACKEND=1)
+```
+
+The value is always normalised to (and saved as) the canonical string. Run
+`hydroflow list-options` for the full table; the most common ones:
+
+| Option | Codes |
+|---|---|
+| `PRECIP_METHOD` | `0` uniform · `1` thiessen · `2` idw · `3` imerg_thiessen · `4` imerg_idw |
+| `RUNOFF_SOURCE` | `0` none · `1` coefficient · `2` raster · `3` scs_cn · `4` vsa_opm |
+| `ROUTING_SCHEME` | `0` kinematic · `1` diffusive · `2` muskingum |
+| `DELINEATION_ENGINE` | `0` pysheds · `1` pyflwdir |
+| `BACKEND` | `0` cpu · `1` gpu |
+| `RUNOFF_MECHANISMS` (list) | `0` vsa · `1` horton · `2` impervious |
+
 **3. QGIS plugin** — see [`qgis_plugin/README.md`](qgis_plugin/README.md); the
-plugin imports the same `vsa_opm` package (pip-installed or vendored in the
+plugin imports the same `hydroflow` package (pip-installed or vendored in the
 plugin zip).
 
 For the repository's batch research workflows, configure
@@ -72,12 +106,33 @@ For the repository's batch research workflows, configure
 Outputs (hydrograph, mass-balance diagnostics, rasters) are written under the
 scenario's `OUTPUT_DIR`.  Optional Earth Engine integration
 (`OPM_SD_SOURCE='gee'`, IMERG precipitation) needs a GEE service account — see
-[`vsa_opm/gee/serves_gee.py`](vsa_opm/gee/serves_gee.py) and `test_ee_auth.sh`
+[`hydroflow/gee/serves_gee.py`](hydroflow/gee/serves_gee.py) and `test_ee_auth.sh`
 for setup/verification.
+
+## Migrating from `vsa_opm`
+
+The package was renamed `vsa_opm` → `hydroflow`. Nothing in the modelling
+science changed; only names moved. Existing code keeps working via shims:
+
+```python
+import vsa_opm                       # still works (emits a DeprecationWarning)
+from vsa_opm import OpmConfig        # OpmConfig is an alias of Config
+from vsa_opm.core.routing import router
+```
+
+Recommended new imports:
+
+```python
+from hydroflow import Config, run_pipeline   # Config == the old OpmConfig
+```
+
+The `vsa-opm` console command is kept as an alias of `hydroflow`. The runoff
+method value `RUNOFF_SOURCE="vsa_opm"` and the `vsa_opm` pipeline stage are
+**unchanged** — those name the Pradhan & Ogden (2010) scheme, not the package.
 
 ## Repository layout
 
-- `vsa_opm/` — the pip-installable model package
+- `hydroflow/` — the pip-installable model package (formerly `vsa_opm`)
   - `core/` — the science (QGIS-free)
     - `routing/` — `terrain.py` (D8/slopes/topological order), `hydraulics.py`
       (Manning + diffusive-wave kernels), `surface.py` (Manning's n, channel

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-vsa_opm.core.runoff — rainfall → effective-runoff generation.
+hydroflow.core.runoff — rainfall → effective-runoff generation.
 
 Modules
 -------
@@ -18,11 +18,13 @@ from .soil import (
     OPM_SD_MIN,
     OPM_Q_MIN,
     resolve_sd_params,
+    resolve_zone_divides,
     per_zone_sd_from_raster,
     usda_psi_m,
 )
 
 __all__ = [
     "RunoffEngine", "OPM_SD_MIN", "OPM_Q_MIN",
-    "resolve_sd_params", "per_zone_sd_from_raster", "usda_psi_m",
+    "resolve_sd_params", "resolve_zone_divides", "per_zone_sd_from_raster",
+    "usda_psi_m",
 ]

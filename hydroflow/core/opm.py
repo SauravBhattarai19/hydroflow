@@ -153,17 +153,10 @@ def run_opm(cfg):
         cell_polygon = np.asarray(cell_polygon).ravel()
         n_polygons   = int(cell_polygon.max()) + 1
 
-        poly_divide_idx   = np.empty(n_polygons, dtype=np.intp)
-        poly_slope_divide = np.empty(n_polygons, dtype=np.float64)
-
-        for p in range(n_polygons):
-            local_idx = np.where(cell_polygon == p)[0]
-            local_fa  = faccum_1d[local_idx]
-            candidates = local_idx[local_fa == local_fa.min()]
-            elev_cand = dem[s_rows[candidates], s_cols[candidates]]
-            best = candidates[elev_cand.argmax()]
-            poly_divide_idx[p]   = best
-            poly_slope_divide[p] = float(slope_1d[best])
+        from .runoff.soil import resolve_zone_divides, per_zone_sd_from_raster
+        poly_divide_idx, poly_divide_candidates, poly_divide_xy = resolve_zone_divides(
+            cell_polygon, n_polygons, faccum_1d, dem, s_rows, s_cols, transform)
+        poly_slope_divide = slope_1d[poly_divide_idx]
 
         # Per-zone SD_max from the deficit raster over each zone's own watershed
         # cells — the SAME path as the production engine
@@ -171,11 +164,10 @@ def run_opm(cfg):
         # instead of falling back to a uniform watershed SD_max.
         reducer = getattr(cfg, 'OPM_SD_REDUCER', 'mean').lower()
         if deficit_raster:
-            from .runoff.soil import per_zone_sd_from_raster
             sd_init_arr = per_zone_sd_from_raster(
                 deficit_raster, cell_polygon, n_polygons,
                 s_rows, s_cols, reducer, sd_min, SD_max_initial,
-                divide_idx=poly_divide_idx)
+                divide_candidates=poly_divide_candidates, divide_xy=poly_divide_xy)
         else:
             sd_init_arr = np.full(n_polygons, SD_max_initial, dtype=np.float64)
 

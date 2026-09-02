@@ -19,6 +19,7 @@ geopandas
 shapely
 pyproj
 pysheds
+pyflwdir
 fiona
 
 # Optional: GPU acceleration (requires CUDA)

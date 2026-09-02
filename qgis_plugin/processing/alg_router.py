@@ -98,7 +98,7 @@ class KinematicWaveAlgorithm(QgsProcessingAlgorithm):
     _IMPERVIOUS_OPTIONS = ["none", "lcz", "lulc", "raster"]
     _SD_SOURCE_OPTIONS = ["manual", "gee"]
     _MANNINGS_SOURCE_OPTIONS = ["scalar", "lulc", "lcz", "raster"]
-    _SCHEME_OPTIONS = ["kinematic", "diffusive"]
+    _SCHEME_OPTIONS = ["kinematic", "diffusive", "muskingum"]
 
     def createInstance(self):  # noqa: N802
         return KinematicWaveAlgorithm()

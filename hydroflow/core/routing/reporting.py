@@ -33,7 +33,7 @@ def write_partition_series(cfg, series):
 
 def append_mass_balance_csv(cfg, scheme, theta, rain_m3, input_m3, outflow_m3,
                              storage_m3, error_m3, rel_error, runoff_ratio,
-                             partition=None):
+                             partition=None, bc_m3=0.0):
     """Append one row of the mass-balance budget to MASS_BALANCE_CSV (header on create).
     Appends so successive runs at different configs accumulate for side-by-side review.
     The row also carries the run tag, the key runoff knobs, and (when available) the
@@ -41,13 +41,13 @@ def append_mass_balance_csv(cfg, scheme, theta, rain_m3, input_m3, outflow_m3,
     import csv
     from datetime import datetime
 
-    path = getattr(cfg, 'MASS_BALANCE_CSV', None) or (
-        getattr(cfg, 'OUTPUT_DIR', 'output/') + 'mass_balance.csv')
+    path = getattr(cfg, 'MASS_BALANCE_CSV', None) or os.path.join(
+        getattr(cfg, 'OUTPUT_DIR', 'output/'), 'mass_balance.csv')
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     p = partition or {}
     header = ['timestamp', 'run_tag', 'scheme', 'theta', 'runoff_source',
               'sd_source', 'sd_max', 'ksat_scale', 'infiltration', 'impervious',
-              'rain_m3', 'input_m3', 'outflow_m3', 'storage_m3',
+              'rain_m3', 'input_m3', 'bc_inflow_m3', 'outflow_m3', 'storage_m3',
               'error_m3', 'rel_error', 'runoff_ratio',
               'dunne_m3', 'horton_m3', 'imperv_m3',
               'dunne_frac', 'horton_frac', 'imperv_frac']
@@ -62,7 +62,7 @@ def append_mass_balance_csv(cfg, scheme, theta, rain_m3, input_m3, outflow_m3,
            getattr(cfg, 'OPM_GA_KSAT_SCALE', ''),
            getattr(cfg, 'OPM_INFILTRATION', ''),
            getattr(cfg, 'IMPERVIOUS_SOURCE', ''),
-           f"{rain_m3:.3f}", f"{input_m3:.3f}", f"{outflow_m3:.3f}",
+           f"{rain_m3:.3f}", f"{input_m3:.3f}", f"{bc_m3:.3f}", f"{outflow_m3:.3f}",
            f"{storage_m3:.3f}", f"{error_m3:.6e}", f"{rel_error:.6e}",
            f"{runoff_ratio:.4f}",
            _f('dunne_m3', "{:.3f}"), _f('horton_m3', "{:.3f}"), _f('imperv_m3', "{:.3f}"),

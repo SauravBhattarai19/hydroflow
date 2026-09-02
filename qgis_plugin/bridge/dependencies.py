@@ -42,7 +42,18 @@ REQUIRED = [
     ("pandas",   "pandas",   "CSV / hydrograph I/O"),
     ("scipy",    "scipy",    "spatial weights (KDTree)"),
     ("rasterio", "rasterio", "raster read/write"),
-    ("pysheds",  "pysheds",  "DEM watershed delineation"),
+    ("pysheds",  "pysheds",  "DEM watershed delineation (legacy engine)"),
+    ("pyflwdir", "pyflwdir", "DEM watershed delineation (default engine; "
+                             "handles reservoirs/flat water pysheds cannot)"),
+    # Not imported by name anywhere in vsa_opm — pysheds and pyflwdir both pull
+    # it in transitively for their JIT kernels.  Listed explicitly so the
+    # installer can detect+fix a broken/ABI-mismatched numba (e.g. an OS/apt-
+    # packaged numba built against a different numpy than the one actually on
+    # sys.path — encountered for real during this feature's testing, raises a
+    # SystemError on bare `import numba`, not just a slow-path JIT warning)
+    # instead of the user hitting an opaque error only when they click
+    # Analyze/Delineate.
+    ("numba",    "numba",    "JIT-compiled delineation kernels"),
 ]
 
 OPTIONAL = [

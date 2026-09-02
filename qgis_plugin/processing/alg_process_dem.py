@@ -31,6 +31,7 @@ from qgis.core import (
     QgsProcessingParameterRasterLayer,
     QgsProcessingParameterCrs,
     QgsProcessingParameterNumber,
+    QgsProcessingParameterEnum,
     QgsProcessingParameterFolderDestination,
     QgsProcessingParameterRasterDestination,
     QgsProcessingOutputRasterLayer,
@@ -48,9 +49,18 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
     # Parameter IDs
     INPUT_DEM = "INPUT_DEM"
     TARGET_CRS = "TARGET_CRS"
+    ENGINE = "ENGINE"
     OUTLET_LAT = "OUTLET_LAT"
     OUTLET_LON = "OUTLET_LON"
     OUTPUT_DIR = "OUTPUT_DIR"
+
+    # Literal vsa_opm.config.OpmConfig.DELINEATION_ENGINE values, in dropdown
+    # order — index 0 (pyflwdir) is the default, matching the interactive
+    # Tab-1 dialog (see qgis_plugin/ui/tab_dem.py).  pyflwdir (priority-flood
+    # fill) correctly routes flow across large flat reservoirs/lakes that can
+    # silently disconnect the upstream basin with pysheds (the legacy engine,
+    # kept for basins already validated against it).
+    _ENGINE_OPTIONS = ["pyflwdir", "pysheds"]
 
     def createInstance(self):  # noqa: N802
         return ProcessDemAlgorithm()
@@ -71,7 +81,10 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
         return (
             "Reprojects the DEM to the target CRS, fills sinks, computes D8 "
             "flow direction and accumulation, snaps the outlet point to the "
-            "nearest stream cell, and delineates the watershed using pysheds.\n\n"
+            "nearest stream cell, and delineates the watershed.\n\n"
+            "Delineation engine: pyflwdir (default, priority-flood fill — "
+            "correctly routes flow across large flat reservoirs/lakes) or "
+            "pysheds (legacy engine).\n\n"
             "Outputs: watershed.tif, clipped_dem.tif, flow_direction.tif, "
             "clipped_flow_accumulation.tif, watershed.geojson."
         )
@@ -85,6 +98,12 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterCrs(
                 self.TARGET_CRS, "Target CRS", defaultValue="EPSG:32645"
+            )
+        )
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.ENGINE, "Delineation engine",
+                options=self._ENGINE_OPTIONS, defaultValue=0  # pyflwdir
             )
         )
         self.addParameter(
@@ -125,6 +144,9 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
         dem_layer = self.parameterAsRasterLayer(parameters, self.INPUT_DEM, context)
         dem_path = dem_layer.source() if dem_layer else parameters[self.INPUT_DEM]
         crs = self.parameterAsCrs(parameters, self.TARGET_CRS, context)
+        engine = self._ENGINE_OPTIONS[
+            self.parameterAsEnum(parameters, self.ENGINE, context)
+        ]
         lat = self.parameterAsDouble(parameters, self.OUTLET_LAT, context)
         lon = self.parameterAsDouble(parameters, self.OUTLET_LON, context)
         out_dir = self.parameterAsString(parameters, self.OUTPUT_DIR, context)
@@ -136,11 +158,12 @@ class ProcessDemAlgorithm(QgsProcessingAlgorithm):
             TARGET_CRS_EPSG=crs.authid(),
             OUTPUT_POINT=(lat, lon),
             OUTPUT_DIR=out_dir,
+            DELINEATION_ENGINE=engine,
         )
         cfg.update_output_paths()
 
         feedback.setProgress(5)
-        feedback.pushInfo("Running DEM pre-processing …")
+        feedback.pushInfo(f"Running DEM pre-processing (engine={engine}) …")
 
         pd_mod.main(cfg)
 

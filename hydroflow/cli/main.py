@@ -2,32 +2,38 @@
 """
 main.py
 =======
-The ``vsa-opm`` command-line interface.
+The ``hydroflow`` command-line interface.
 
 Commands
 --------
-    vsa-opm run -c config.yaml [--stages process_dem routing]
+    hydroflow run -c config.yaml [--stages process_dem routing]
         Run the pipeline with the given config file (YAML, JSON or a legacy
         flat python settings module).
 
-    vsa-opm init-config [-o config.yaml]
+    hydroflow init-config [-o config.yaml]
         Write a template config file with every parameter at its default,
         ready to edit.
 
-    vsa-opm validate -c config.yaml
+    hydroflow validate -c config.yaml
         Load the config file and run the pre-flight sanity checks without
         starting a simulation.
+
+    hydroflow list-options
+        Print every fixed-choice option with its integer codes (each option
+        accepts the string or the code, e.g. PRECIP_METHOD: uniform ≡ 0).
+
+The legacy ``vsa-opm`` command remains as an alias of ``hydroflow``.
 """
 
 import argparse
 import sys
 
-from ..config import OpmConfig
+from ..config import Config
 from ..pipeline import run_pipeline, DEFAULT_STAGES, _STAGE_PROGRESS
 
 
 def _cmd_run(args):
-    cfg = OpmConfig.from_file(args.config)
+    cfg = Config.from_file(args.config)
     if args.output_dir:
         cfg.OUTPUT_DIR = args.output_dir
         cfg.update_output_paths()
@@ -39,16 +45,18 @@ def _cmd_run(args):
 
 
 def _cmd_init_config(args):
-    cfg = OpmConfig()
+    cfg = Config()
     path = cfg.save(args.output)
     print(f"Template config written to: {path}")
     print("Edit at least DEM_PATH, OUTPUT_POINT, TARGET_CRS_EPSG and OUTPUT_DIR, then:")
-    print(f"  vsa-opm run -c {path}")
+    print(f"  hydroflow run -c {path}")
+    print("Tip: fixed-choice options accept a string or an integer code "
+          "(see 'hydroflow list-options').")
     return 0
 
 
 def _cmd_validate(args):
-    cfg = OpmConfig.from_file(args.config)
+    cfg = Config.from_file(args.config)
     try:
         cfg.validate()
     except ValueError as exc:
@@ -58,10 +66,16 @@ def _cmd_validate(args):
     return 0
 
 
+def _cmd_list_options(args):
+    print(Config.describe_options())
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="vsa-opm",
-        description="VSA-OPM distributed hydrologic model (Pradhan & Ogden 2010).",
+        prog="hydroflow",
+        description="hydroflow — distributed hydrological + hydrodynamic model "
+                    "(VSA-OPM; Pradhan & Ogden 2010).",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -86,6 +100,10 @@ def build_parser():
     p_val.add_argument("-c", "--config", required=True,
                        help="config file (.yaml, .json or legacy .py)")
     p_val.set_defaults(func=_cmd_validate)
+
+    p_opts = sub.add_parser("list-options",
+                            help="list fixed-choice options and their integer codes")
+    p_opts.set_defaults(func=_cmd_list_options)
 
     return parser
 

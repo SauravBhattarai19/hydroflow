@@ -227,6 +227,7 @@ class OpmMainDialog(QDialog):
             "dem_path": dem,
             "target_crs_epsg": self.tab_dem.get_target_crs(),
             "output_dir": out,
+            "engine": self.tab_dem.get_delineation_engine(),
         }
         self._start_dem_step("analyze_terrain", params)
 
@@ -244,6 +245,7 @@ class OpmMainDialog(QDialog):
             "output_dir": out,
             "output_point_latlon": (lat, lon),
             "target_crs_epsg": self.tab_dem.get_target_crs(),
+            "engine": self.tab_dem.get_delineation_engine(),
         }
         self._start_dem_step("delineate", params)
 

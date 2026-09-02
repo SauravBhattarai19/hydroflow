@@ -95,6 +95,17 @@ def load_master() -> pd.DataFrame:
     df["scheme"]     = df["scheme"].astype(str)
     df["mechanisms"] = df["mechanisms"].astype(str)
     df["event"]      = df["event"].astype(str)
+    if "infiltration" in df.columns:
+        # leaf_path() below resolves to the no-suffix (OPM_INFILTRATION='green_ampt')
+        # path only; the 'none' variant lives one level deeper (.../infilt_none/) and
+        # is a separate ablation axis (see tools/run_combinations.py), not part of
+        # this figure set — keep these figures apples-to-apples with the original
+        # channel x scheme x mechanisms sweep.
+        df = df[df["infiltration"] == "green_ampt"].drop(columns=["infiltration"])
+    if "sd_reducer" in df.columns:
+        # Same reasoning as infiltration above — 'divide' is a separate ablation
+        # axis (.../sd_divide/), not part of this figure set.
+        df = df[df["sd_reducer"] == "max"].drop(columns=["sd_reducer"])
     return df
 
 
