@@ -29,7 +29,7 @@ Quick start
 ``Config`` is the canonical configuration object; ``OpmConfig`` is an alias.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from .config import Config, OpmConfig
 from .pipeline import run_pipeline, DEFAULT_STAGES
