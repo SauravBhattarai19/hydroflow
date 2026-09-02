@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydroflow"
-version = "0.1.0"
+version = "0.1.1"
 description = "hydroflow: a distributed, physics-based hydrological + hydrodynamic model — DEM preprocessing, gauge/IMERG precipitation, VSA + Green-Ampt + impervious runoff generation, and kinematic/diffusive-wave/Muskingum–Cunge routing, with optional Google Earth Engine forcing and CPU/GPU backends."
 readme = "README.md"
 requires-python = ">=3.9"
