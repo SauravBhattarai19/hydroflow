@@ -1,6 +1,6 @@
 site_name: hydroflow
 site_description: A distributed, physics-based hydrological + hydrodynamic model — rainfall-runoff generation and grid-based flood routing, driven by open satellite data.
-site_url: https://sauravbhattarai19.github.io/hydroflow/
+site_url: https://pyhydroflow.readthedocs.io/
 repo_url: https://github.com/SauravBhattarai19/hydroflow
 repo_name: hydroflow
 docs_dir: docsite

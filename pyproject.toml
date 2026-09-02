@@ -57,7 +57,7 @@ hydroflow = "hydroflow.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/SauravBhattarai19/hydroflow"
-Documentation = "https://hydroflow.readthedocs.io"
+Documentation = "https://pyhydroflow.readthedocs.io"
 Issues = "https://github.com/SauravBhattarai19/hydroflow/issues"
 
 [tool.setuptools.packages.find]

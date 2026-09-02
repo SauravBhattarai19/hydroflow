@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Docs](https://img.shields.io/badge/docs-hydroflow.readthedocs.io-teal.svg)](https://hydroflow.readthedocs.io)
+[![Docs](https://img.shields.io/badge/docs-pyhydroflow.readthedocs.io-teal.svg)](https://pyhydroflow.readthedocs.io)
 
 **A distributed, physics-based hydrological + hydrodynamic model.** hydroflow
 turns a bare-earth DEM and a rain event into a routed flood hydrograph —
@@ -12,7 +12,7 @@ with optional GPU acceleration and Google Earth Engine forcing.
 
 ## 📖 Documentation
 
-**Full docs, guides and API reference → [hydroflow.readthedocs.io](https://hydroflow.readthedocs.io)**
+**Full docs, guides and API reference → [pyhydroflow.readthedocs.io](https://pyhydroflow.readthedocs.io)**
 
 Learn the science interactively → [the hydroflow course](https://sauravbhattarai19.github.io/hydroflow/)
 
@@ -58,7 +58,7 @@ hydroflow run -c run.yaml           # process_dem + routing
 
 ## Links
 
-- **Documentation:** <https://hydroflow.readthedocs.io>
+- **Documentation:** <https://pyhydroflow.readthedocs.io>
 - **Interactive course:** <https://sauravbhattarai19.github.io/hydroflow/>
 - **Source & issues:** <https://github.com/SauravBhattarai19/hydroflow>
 

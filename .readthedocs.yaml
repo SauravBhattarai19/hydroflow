@@ -1,5 +1,5 @@
 # Read the Docs build config — https://docs.readthedocs.io/en/stable/config-file/
-# Hosts the mkdocs site (docsite/ + mkdocs.yml) at hydroflow.readthedocs.io.
+# Hosts the mkdocs site (docsite/ + mkdocs.yml) at pyhydroflow.readthedocs.io.
 version: 2
 
 build:
