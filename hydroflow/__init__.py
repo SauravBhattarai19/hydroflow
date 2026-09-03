@@ -36,7 +36,7 @@ stage fetch one automatically (requires ``pip install hydroflow[gee]`` +
 authentication).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .config import Config, OpmConfig
 from .pipeline import run_pipeline, DEFAULT_STAGES
