@@ -54,6 +54,7 @@ Discover them anytime with `hydroflow list-options` or
 | `SERVES_SATELLITE` | `0` landsat · `1` sentinel2 · `2` modis |
 | `OPM_SOILGRIDS_DEPTH` | `0` b0 · `1` b10 · `2` b30 · `3` b60 · `4` b100 · `5` b200 |
 | `MANNINGS_N_SOURCE` | `0` scalar · `1` lulc · `2` lcz · `3` raster |
+| `DEM_SOURCE` | `0` nasadem · `1` srtm · `2` merit · `3` alos · `4` copernicus_glo30 · `5` usgs_3dep_1m · `6` gmted2010 |
 | `RUNOFF_MECHANISMS` (list) | `0` vsa · `1` horton · `2` impervious |
 
 ## Key parameter groups
@@ -62,7 +63,8 @@ Discover them anytime with `hydroflow list-options` or
 
     | Parameter | Meaning |
     |---|---|
-    | `DEM_PATH` | input DEM (GeoTIFF) |
+    | `DEM_PATH` | input DEM (GeoTIFF); leave empty to auto-download (see below) |
+    | `DEM_BOUNDS_WGS84`, `DEM_SOURCE` | auto-download a DEM from Earth Engine when `DEM_PATH` is empty |
     | `OUTPUT_POINT` | `(lat, lon)` of the basin outlet |
     | `TARGET_CRS_EPSG` | metric CRS for the run, e.g. `"EPSG:32645"` |
     | `OUTPUT_DIR` | where results are written |
@@ -110,3 +112,56 @@ tried in order:
 
 `Config.validate()` errors early if a GEE-backed option is selected without a
 project, so offline runs never surprise you.
+
+## No local DEM? Auto-download from Earth Engine
+
+If you don't have a DEM for your basin yet, hydroflow can fetch one from
+Google Earth Engine instead of requiring a local `DEM_PATH`. Browse the
+available datasets — this needs no `[gee]` install, it's static catalog
+metadata:
+
+```python
+import hydroflow
+print(hydroflow.describe_available_dems())
+# or, programmatically:
+for d in hydroflow.list_available_dems():
+    print(d["id"], d["title"], d["resolution_m"], d["bbox"])
+```
+
+```bash
+hydroflow list-dems
+```
+
+| Key | Dataset | Resolution | Coverage |
+|---|---|---|---|
+| `nasadem` (default) | NASADEM (void-filled SRTM) | ~30 m | 56°S–60°N |
+| `srtm` | SRTM GL1 v3 | ~30 m | 56°S–60°N |
+| `merit` | MERIT DEM (hydrologically conditioned) | ~92 m | 60°S–90°N |
+| `alos` | ALOS World 3D (AW3D30) v4.1 | ~30 m | 82°S–82°N |
+| `copernicus_glo30` | Copernicus DEM GLO-30 | ~30 m | global |
+| `usgs_3dep_1m` | USGS 3DEP 1m lidar | ~1 m | US only, patchy |
+| `gmted2010` | GMTED2010 | ~232 m | near-global, coarse |
+
+To use one, leave `DEM_PATH` empty and set `DEM_BOUNDS_WGS84` (the box to
+download, in `(min_lon, min_lat, max_lon, max_lat)` EPSG:4326 coordinates)
+and optionally `DEM_SOURCE`:
+
+```python
+from hydroflow import Config, run_pipeline
+
+cfg = Config(
+    DEM_BOUNDS_WGS84=(85.25, 27.60, 85.34, 27.67),   # (min_lon, min_lat, max_lon, max_lat)
+    DEM_SOURCE="merit",                               # default: "nasadem"
+    OUTPUT_POINT=(27.632222, 85.293333),              # (lat, lon) outlet, inside the box
+    TARGET_CRS_EPSG="EPSG:32645",
+    OUTPUT_DIR="results/",
+    GEE_PROJECT="your-gee-project",
+)
+run_pipeline(cfg, stages=("process_dem", "routing"))
+```
+
+The `process_dem` stage downloads the DEM (cached to
+`{OUTPUT_DIR}/raw_dem_gee.tif` — re-runs skip the download if it already
+exists), area-averages/reprojects it to `TARGET_CRS_EPSG`, and proceeds with
+watershed delineation exactly as it would with a local file. Requires
+`pip install hydroflow[gee]` and Earth Engine authentication (see above).

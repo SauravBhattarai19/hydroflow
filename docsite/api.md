@@ -13,6 +13,20 @@ from hydroflow import Config, run_pipeline, OpmConfig, DEFAULT_STAGES
     options:
       heading_level: 3
 
+## `list_available_dems` / `describe_available_dems`
+
+Browse the DEM datasets hydroflow can auto-download from Google Earth Engine
+(see [Configuration → No local DEM?](configuration.md#no-local-dem-auto-download-from-earth-engine)).
+No `[gee]` install required just to list them.
+
+::: hydroflow.list_available_dems
+    options:
+      heading_level: 3
+
+::: hydroflow.describe_available_dems
+    options:
+      heading_level: 3
+
 ## `Config`
 
 The single configuration object for a run. `OpmConfig` is an alias of this

@@ -31,6 +31,8 @@ Usage
 import json
 import os
 
+from .gee.dem_catalog import DEM_CATALOG as _DEM_CATALOG
+
 
 def _data_path(filename):
     """Absolute path of a lookup file shipped inside the package (hydroflow/data)."""
@@ -63,6 +65,7 @@ _ENUM_CHOICES = {
     "SERVES_SATELLITE":      ["landsat", "sentinel2", "modis"],
     "OPM_SOILGRIDS_DEPTH":   ["b0", "b10", "b30", "b60", "b100", "b200"],
     "MANNINGS_N_SOURCE":     ["scalar", "lulc", "lcz", "raster"],
+    "DEM_SOURCE":            list(_DEM_CATALOG),
 }
 
 # Options whose value is a *list* of choices (each element normalised the same
@@ -131,6 +134,16 @@ class Config:
     # 1.  EVENT & SCENARIO
     # ═════════════════════════════════════════════════════════════════════════
     DEM_PATH: str = ""
+
+    # Auto-download a DEM from Google Earth Engine when DEM_PATH is empty.
+    # DEM_BOUNDS_WGS84: (min_lon, min_lat, max_lon, max_lat) in EPSG:4326 —
+    # None (default) means "no auto-download, DEM_PATH must point to a local
+    # file". DEM_SOURCE picks which catalog dataset to pull (see
+    # hydroflow.describe_available_dems() / `hydroflow list-dems`). Requires
+    # `pip install hydroflow[gee]` + GEE_PROJECT (or the GEE_PROJECT env var).
+    DEM_BOUNDS_WGS84 = None
+    DEM_SOURCE: str = "nasadem"
+
     TARGET_CRS_EPSG: str = "EPSG:32645"
     OUTPUT_POINT: tuple = (27.632222, 85.293333)   # (lat, lon)
     OUTPUT_DIR: str = "output/"
@@ -479,7 +492,20 @@ class Config:
         """
         errors = []
 
-        if not self.DEM_PATH or not os.path.exists(self.DEM_PATH):
+        if not self.DEM_PATH:
+            if not self.DEM_BOUNDS_WGS84:
+                errors.append(
+                    "DEM_PATH is empty — provide a local DEM file, or set "
+                    "DEM_BOUNDS_WGS84 (+ optionally DEM_SOURCE) to "
+                    "auto-download from Google Earth Engine (requires "
+                    "hydroflow[gee] + GEE_PROJECT)."
+                )
+            elif not (self.GEE_PROJECT or os.environ.get("GEE_PROJECT")):
+                errors.append(
+                    "DEM auto-download (DEM_BOUNDS_WGS84 is set) needs "
+                    "GEE_PROJECT (or the GEE_PROJECT env var)."
+                )
+        elif not os.path.exists(self.DEM_PATH):
             errors.append(f"DEM_PATH not found: '{self.DEM_PATH}'")
 
         if self.TIME_STEP_SECONDS <= 0:

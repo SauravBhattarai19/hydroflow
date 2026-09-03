@@ -7,13 +7,15 @@ LULC/LCZ, IMERG — is pulled by the rest of vsa_opm.gee once a DEM and
 watershed boundary exist; this is the one missing piece needed to bootstrap a
 brand-new basin from scratch).
 
-GEE dataset
------------
-    NASA/NASADEM_HGT/001   band 'elevation'   — void-filled SRTM, ~30m native
+GEE datasets
+------------
+    Any entry in ``hydroflow.gee.dem_catalog.DEM_CATALOG`` (NASADEM, SRTM,
+    MERIT, ALOS AW3D30, Copernicus GLO-30, USGS 3DEP 1m, GMTED2010 — see
+    ``hydroflow.describe_available_dems()`` or ``hydroflow list-dems``), or a
+    raw GEE asset id for datasets outside the catalog.
 
 Downsamples with a real area-average (reduceResolution mean), not a naive
-reproject/resample, so the 100m output isn't just nearest/bilinear-picked
-30m pixels.
+reproject/resample, so the output isn't just nearest/bilinear-picked pixels.
 
 Large bounding boxes exceed GEE's ~50MB getDownloadURL request-size cap, so
 big requests are automatically split into a lon/lat tile grid and mosaicked
@@ -32,6 +34,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .auth import authenticate as _authenticate  # noqa: E402
+from .dem_catalog import get_dem_info, check_coverage  # noqa: E402
 
 try:
     import ee
@@ -56,18 +59,27 @@ def _download_one(img, geometry, target_crs_epsg, scale_m, output_path):
     urllib.request.urlretrieve(url, output_path)
 
 
-def download_dem(bbox_wgs84, target_crs_epsg, scale_m, output_path,
-                  project=None, dataset='NASA/NASADEM_HGT/001', band='elevation'):
+def download_dem(bbox_wgs84, target_crs_epsg, output_path, scale_m=None,
+                  project=None, dataset='nasadem', band=None):
     """
     Download a DEM from GEE, reprojected + area-averaged to (target_crs_epsg,
     scale_m), clipped to bbox_wgs84.
 
     Parameters
     ----------
-    bbox_wgs84 : (min_lon, min_lat, max_lon, max_lat)
+    bbox_wgs84 : (min_lon, min_lat, max_lon, max_lat)  in EPSG:4326
     target_crs_epsg : str, e.g. 'EPSG:32616'
-    scale_m : float, output pixel size in metres
     output_path : str
+    scale_m : float, optional
+        Output pixel size in metres. None (default) uses the dataset's
+        native resolution from the catalog.
+    dataset : str
+        A catalog key from ``hydroflow.gee.dem_catalog`` (e.g. 'nasadem',
+        'merit', 'copernicus_glo30' — see ``list_dems()``/``describe_dems()``),
+        or a raw GEE asset id (e.g. 'NASA/NASADEM_HGT/001') for datasets not
+        in the catalog, in which case *band* must be given explicitly.
+    band : str, optional
+        Overrides the catalog's default band.
 
     Caches to *output_path*; skips download if the file already exists.
     Large boxes are auto-tiled and mosaicked. Returns the output path on
@@ -80,6 +92,30 @@ def download_dem(bbox_wgs84, target_crs_epsg, scale_m, output_path,
     if not GEE_AVAILABLE:
         logger.warning("earthengine-api not installed")
         return None
+
+    try:
+        info = get_dem_info(dataset)
+        gee_id = info['gee_id']
+        gee_type = info['gee_type']
+        band = band or info['band']
+        scale_m = scale_m or info['resolution_m']
+        if not check_coverage(dataset, bbox_wgs84):
+            lon0, lat0, lon1, lat1 = info['bbox']
+            logger.warning(
+                "Requested bbox %s falls outside %s's advertised coverage "
+                "(lon [%.2f, %.2f], lat [%.2f, %.2f]) — download may return "
+                "empty or partial data.",
+                bbox_wgs84, dataset, lon0, lon1, lat0, lat1)
+    except KeyError:
+        # Not a catalog key — treat as a raw GEE asset id (advanced use).
+        if not band or not scale_m:
+            raise ValueError(
+                f"'{dataset}' is not a known DEM catalog entry (see "
+                "hydroflow.list_available_dems()); pass both band= and "
+                "scale_m= explicitly to use a raw GEE asset id."
+            )
+        gee_id = dataset
+        gee_type = 'Image'
 
     if not _authenticate(project):
         return None
@@ -105,7 +141,13 @@ def download_dem(bbox_wgs84, target_crs_epsg, scale_m, output_path,
         side = max(1, math.ceil(math.sqrt(n_tiles)))
         nx, ny = side, side
 
-        img = ee.Image(dataset).select(band)
+        if gee_type == 'ImageCollection':
+            # .mosaic() alone drops per-tile projection info, which
+            # reduceResolution() requires — borrow it from the first tile.
+            col = ee.ImageCollection(gee_id).select(band)
+            img = col.mosaic().setDefaultProjection(col.first().projection())
+        else:
+            img = ee.Image(gee_id).select(band)
         img = (img.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=1024)
                   .reproject(crs=target_crs_epsg, scale=scale_m))
 

@@ -51,6 +51,17 @@ Prints every fixed-choice option with its integer codes, e.g.
 `PRECIP_METHOD : 0=uniform  1=thiessen  …`. Handy because config values accept
 either the string or the code.
 
+### `list-dems` — discover DEM sources
+
+```bash
+hydroflow list-dems
+```
+
+Prints every DEM dataset hydroflow can auto-download from Google Earth
+Engine (dataset id, native resolution, coverage) — set `DEM_SOURCE` to one
+of these keys and `DEM_BOUNDS_WGS84` to skip needing a local `DEM_PATH`. See
+[Configuration → No local DEM?](configuration.md#no-local-dem-auto-download-from-earth-engine).
+
 ## Typical session
 
 ```bash

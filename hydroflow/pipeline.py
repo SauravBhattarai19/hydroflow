@@ -53,9 +53,39 @@ def prepare_output_dir(cfg, log=print):
 
 # ── Individual stages ──────────────────────────────────────────────────────────
 
-def stage_process_dem(cfg):
-    """Run DEM preprocessing.  Returns a dict of generated file paths."""
+def stage_process_dem(cfg, log=print):
+    """Run DEM preprocessing.  Returns a dict of generated file paths.
+
+    If cfg.DEM_PATH is empty and cfg.DEM_BOUNDS_WGS84 is set, first downloads
+    a DEM from Google Earth Engine (dataset = cfg.DEM_SOURCE) covering those
+    bounds and points cfg.DEM_PATH at it, so hydroflow/core/ stays GEE-free —
+    all Earth Engine access happens here in the orchestration layer.
+    """
     from .core import dem_processing
+
+    if not cfg.DEM_PATH and getattr(cfg, "DEM_BOUNDS_WGS84", None):
+        from .gee.dem_gee import download_dem
+
+        log(f"  Downloading DEM from Google Earth Engine "
+            f"({getattr(cfg, 'DEM_SOURCE', 'nasadem')}) …")
+        raw_dem_path = os.path.join(cfg.OUTPUT_DIR, "raw_dem_gee.tif")
+        downloaded = download_dem(
+            bbox_wgs84=cfg.DEM_BOUNDS_WGS84,
+            target_crs_epsg=cfg.TARGET_CRS_EPSG,
+            output_path=raw_dem_path,
+            project=cfg.GEE_PROJECT,
+            dataset=getattr(cfg, "DEM_SOURCE", "nasadem"),
+        )
+        if not downloaded:
+            raise RuntimeError(
+                "DEM auto-download from Google Earth Engine failed. Check: "
+                "'pip install hydroflow[gee]' is installed; GEE "
+                "authentication (GOOGLE_APPLICATION_CREDENTIALS, or run "
+                "`earthengine authenticate`); GEE_PROJECT is set; and that "
+                "DEM_BOUNDS_WGS84 = (min_lon, min_lat, max_lon, max_lat) is "
+                "valid EPSG:4326 coordinates."
+            )
+        cfg.DEM_PATH = downloaded
 
     dem_processing.main(cfg)
 
@@ -157,7 +187,7 @@ def run_pipeline(cfg, stages=DEFAULT_STAGES, on_log=None, on_progress=None,
             base, span = _STAGE_PROGRESS[stage]
             if stage == "process_dem":
                 emit(base + span // 3)
-                result.update(stage_process_dem(cfg))
+                result.update(stage_process_dem(cfg, log=log))
                 emit(base + span)
             elif stage == "routing":
                 result.update(stage_routing(cfg, log=log, progress=emit,

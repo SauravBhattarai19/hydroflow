@@ -21,6 +21,11 @@ Commands
     hydroflow list-options
         Print every fixed-choice option with its integer codes (each option
         accepts the string or the code, e.g. PRECIP_METHOD: uniform ≡ 0).
+
+    hydroflow list-dems
+        Print every DEM dataset hydroflow can auto-download from Google Earth
+        Engine (dataset id, resolution, coverage) — set DEM_SOURCE to one of
+        these keys.
 """
 
 import argparse
@@ -69,6 +74,12 @@ def _cmd_list_options(args):
     return 0
 
 
+def _cmd_list_dems(args):
+    from ..gee.dem_catalog import describe_dems
+    print(describe_dems())
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="hydroflow",
@@ -102,6 +113,10 @@ def build_parser():
     p_opts = sub.add_parser("list-options",
                             help="list fixed-choice options and their integer codes")
     p_opts.set_defaults(func=_cmd_list_options)
+
+    p_dems = sub.add_parser("list-dems",
+                            help="list DEM datasets available via Google Earth Engine")
+    p_dems.set_defaults(func=_cmd_list_dems)
 
     return parser
 

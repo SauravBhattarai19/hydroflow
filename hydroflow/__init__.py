@@ -27,17 +27,30 @@ Quick start
     results = run_pipeline(cfg, stages=("process_dem", "routing"))
 
 ``Config`` is the canonical configuration object; ``OpmConfig`` is an alias.
+
+No local DEM yet? ``print(hydroflow.describe_available_dems())`` lists the
+DEM datasets hydroflow can auto-download from Google Earth Engine (no
+``[gee]`` install needed just to browse); set ``Config(DEM_BOUNDS_WGS84=...,
+DEM_SOURCE=...)`` with an empty ``DEM_PATH`` to have the ``process_dem``
+stage fetch one automatically (requires ``pip install hydroflow[gee]`` +
+authentication).
 """
 
 __version__ = "0.1.0"
 
 from .config import Config, OpmConfig
 from .pipeline import run_pipeline, DEFAULT_STAGES
+from .gee.dem_catalog import (
+    list_dems as list_available_dems,
+    describe_dems as describe_available_dems,
+)
 
 __all__ = [
     "Config",
     "OpmConfig",
     "run_pipeline",
     "DEFAULT_STAGES",
+    "list_available_dems",
+    "describe_available_dems",
     "__version__",
 ]
