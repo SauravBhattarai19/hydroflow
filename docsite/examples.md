@@ -40,7 +40,36 @@ plt.show()
 
 ![Delineated watershed](assets/img/watershed.png)
 
-## 2. Route a storm into a hydrograph
+## 2. No local DEM? Auto-download one from Earth Engine
+
+Skip `DEM_PATH` entirely and give a bounding box instead — hydroflow fetches,
+area-averages and reprojects a DEM from Google Earth Engine before
+delineating (requires `pip install hydroflow[gee]` + authentication):
+
+```python
+import hydroflow
+from hydroflow import Config, run_pipeline
+
+print(hydroflow.describe_available_dems())   # browse options — no [gee] needed
+
+cfg = Config(
+    DEM_BOUNDS_WGS84=(85.05, 27.55, 85.55, 27.90),  # (min_lon, min_lat, max_lon, max_lat)
+    DEM_SOURCE="nasadem",                            # see hydroflow list-dems
+    OUTPUT_DIR="results/",
+    OUTPUT_POINT=(27.632222, 85.293333),             # (lat, lon), inside the box
+    TARGET_CRS_EPSG="EPSG:32645",
+    GEE_PROJECT="your-gee-project",
+)
+cfg.update_output_paths()
+
+out = run_pipeline(cfg, stages=("process_dem",))
+print(out["watershed_geojson"])
+```
+
+The download is cached to `results/raw_dem_gee.tif`, so re-running the same
+config skips straight to delineation.
+
+## 3. Route a storm into a hydrograph
 
 Add the `routing` stage. Here a 1-hour, 30 mm/hr design storm is routed as
 runoff across a compact catchment with the kinematic-wave scheme.
@@ -82,7 +111,7 @@ mass-balance report so you can trust the numbers:
 Closure error : -0.000 m³  (-7.5e-12 % of input)  [PASS]
 ```
 
-## 3. Switch routing schemes (strings or integer codes)
+## 4. Switch routing schemes (strings or integer codes)
 
 Options accept a string **or** an integer code, so a sweep is a one-liner:
 
@@ -95,7 +124,7 @@ for scheme in ["kinematic", "diffusive", "muskingum"]:   # or 0, 1, 2
     run_pipeline(cfg, stages=("process_dem", "routing"))
 ```
 
-## 4. Physically-based runoff (VSA-OPM)
+## 5. Physically-based runoff (VSA-OPM)
 
 Switch `RUNOFF_SOURCE` to the full VSA-OPM sandbox and compose mechanisms —
 saturation-excess (VSA), Green-Ampt infiltration (Horton), and impervious
