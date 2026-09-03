@@ -73,6 +73,7 @@ def stage_process_dem(cfg, log=print):
             bbox_wgs84=cfg.DEM_BOUNDS_WGS84,
             target_crs_epsg=cfg.TARGET_CRS_EPSG,
             output_path=raw_dem_path,
+            scale_m=getattr(cfg, "DEM_SCALE_M", None),
             project=cfg.GEE_PROJECT,
             dataset=getattr(cfg, "DEM_SOURCE", "nasadem"),
         )

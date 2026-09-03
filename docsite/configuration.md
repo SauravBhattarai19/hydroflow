@@ -64,7 +64,7 @@ Discover them anytime with `hydroflow list-options` or
     | Parameter | Meaning |
     |---|---|
     | `DEM_PATH` | input DEM (GeoTIFF); leave empty to auto-download (see below) |
-    | `DEM_BOUNDS_WGS84`, `DEM_SOURCE` | auto-download a DEM from Earth Engine when `DEM_PATH` is empty |
+    | `DEM_BOUNDS_WGS84`, `DEM_SOURCE`, `DEM_SCALE_M` | auto-download a DEM from Earth Engine when `DEM_PATH` is empty; `DEM_SCALE_M` overrides the source's native resolution (metres/pixel) |
     | `OUTPUT_POINT` | `(lat, lon)` of the basin outlet |
     | `TARGET_CRS_EPSG` | metric CRS for the run, e.g. `"EPSG:32645"` |
     | `OUTPUT_DIR` | where results are written |
@@ -213,6 +213,20 @@ cfg = Config(
     GEE_PROJECT="your-gee-project",
 )
 run_pipeline(cfg, stages=("process_dem", "routing"))
+```
+
+By default the download uses `DEM_SOURCE`'s native resolution (30m for most
+catalog entries). Set `DEM_SCALE_M` to override it — GEE area-averages down
+to whatever pixel size you ask for (it can't invent detail finer than the
+source's native resolution, only coarsen it):
+
+```python
+cfg = Config(
+    DEM_BOUNDS_WGS84=(85.25, 27.60, 85.34, 27.67),
+    DEM_SOURCE="nasadem",
+    DEM_SCALE_M=100.0,   # 100 m/pixel instead of NASADEM's native 30 m
+    ...
+)
 ```
 
 The `process_dem` stage downloads the DEM (cached to

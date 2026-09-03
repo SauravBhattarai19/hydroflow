@@ -143,6 +143,10 @@ class Config:
     # `pip install hydroflow[gee]` + GEE_PROJECT (or the GEE_PROJECT env var).
     DEM_BOUNDS_WGS84 = None
     DEM_SOURCE: str = "nasadem"
+    # Output pixel size [m] for the auto-download. None (default) uses
+    # DEM_SOURCE's native resolution (see hydroflow.describe_available_dems());
+    # set e.g. 100.0 to area-average to a coarser grid at download time.
+    DEM_SCALE_M = None
 
     TARGET_CRS_EPSG: str = "EPSG:32645"
     OUTPUT_POINT: tuple = (27.632222, 85.293333)   # (lat, lon)
