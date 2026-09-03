@@ -64,7 +64,7 @@ prebuilt wheels for the geospatial libraries — no system GDAL required.
     ```
 
 !!! tip "Earth Engine authentication"
-    GEE features need a Google Cloud project. hydroflow initialises Earth Engine
-    from `GOOGLE_APPLICATION_CREDENTIALS`, a `key.json` next to the package, or
-    the `GEE_PROJECT` environment variable / config attribute. See the
-    [Configuration](configuration.md) page.
+    GEE features (including DEM auto-download) need both an authenticated
+    session and a Google Cloud project ID — see
+    [Configuration → Earth Engine setup](configuration.md#earth-engine-setup-first-time)
+    for the one-time signup/authenticate/`GEE_PROJECT` walkthrough.

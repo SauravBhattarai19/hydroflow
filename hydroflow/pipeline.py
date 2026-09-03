@@ -124,6 +124,7 @@ def stage_routing(cfg, log=print, progress=None, is_cancelled=None):
     return {
         "hydrograph_csv": cfg.HYDROGRAPH_CSV,
         "hydrograph_df": df,
+        "mass_balance_csv": cfg.MASS_BALANCE_CSV,
     }
 
 

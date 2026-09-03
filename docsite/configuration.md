@@ -100,18 +100,73 @@ Discover them anytime with `hydroflow list-options` or
 The full, commented list of every parameter and its default lives in the
 [`Config` API reference](api.md).
 
-## Earth Engine
+`ROUTING_SCHEME` accepts a string or its integer code, so sweeping schemes is
+a one-liner:
 
-GEE-backed inputs (IMERG rainfall, SERVES deficit, SoilGrids, LULC/LCZ) are
-optional and lazily imported. Set a project and authenticate one of three ways,
-tried in order:
+```python
+for scheme in ["kinematic", "diffusive", "muskingum"]:   # or 0, 1, 2
+    cfg = Config(DEM_PATH="catchment.tif", OUTPUT_DIR=f"out_{scheme}/",
+                 OUTPUT_POINT=(27.23, 85.30), ROUTING_SCHEME=scheme,
+                 PRECIP_METHOD=0, RUNOFF_SOURCE=0)   # 0 == "uniform" / "none"
+    cfg.update_output_paths()
+    run_pipeline(cfg, stages=("process_dem", "routing"))
+```
 
-1. `GOOGLE_APPLICATION_CREDENTIALS` (service-account JSON)
-2. a `key.json` next to the package / repo root / cwd
-3. `GEE_PROJECT` (config attribute or environment variable)
+## Elevation-based Manning's n
 
-`Config.validate()` errors early if a GEE-backed option is selected without a
-project, so offline runs never surprise you.
+There's no dedicated `MANNINGS_N_SOURCE` for elevation — instead,
+[`mannings_n_from_dem`][hydroflow.mannings_n_from_dem] generates a Manning's-n
+GeoTIFF from a DEM using an elevation rule (breakpoints, bins, or any
+callable), and you point the existing `MANNINGS_N_SOURCE="raster"` at it. See
+[Examples #4](examples.md#4-mannings-n-by-elevation) for a full walkthrough.
+
+## Boundary conditions
+
+`ROUTING_INFLOW_BC` injects an external discharge hydrograph Q(t) at one or
+more cells — lat/lon (auto-reprojected and snapped to the nearest channel
+cell), row/col, or easting/northing; see the attribute's docstring in
+`hydroflow/config.py` for the full spec. Set `RAIN_INTENSITY_MM_HR=0` for
+pure routing driven only by the boundary condition. See
+[Examples #3](examples.md#3-add-an-upstream-boundary-condition-hydrograph).
+
+## Earth Engine setup (first time)
+
+Every GEE-backed feature — DEM auto-download, IMERG rainfall, SERVES deficit,
+SoilGrids, LULC/LCZ, the notebook bounds picker — needs **both** an
+authenticated session **and** a Google Cloud project ID; there's no way
+around providing a project ID, Google requires one on every `ee.Initialize()`
+call. Do this once, then every example in this documentation just works:
+
+1. **Get Earth Engine access.** Sign up at
+   [earthengine.google.com](https://earthengine.google.com/) if you haven't
+   already (noncommercial use is free).
+2. **Create or pick a Google Cloud project** in the
+   [Cloud Console](https://console.cloud.google.com/) and enable the Earth
+   Engine API for it. The project's ID (not its display name — e.g.
+   `my-project-id`, visible on the Cloud Console dashboard) is what
+   `GEE_PROJECT` needs.
+3. **Authenticate** — pick one:
+    - **Interactive (local dev / notebooks):** `pip install hydroflow[gee]`
+      installs the `earthengine-api` CLI too — run `earthengine authenticate`
+      once; it opens a browser and caches credentials locally. hydroflow also
+      triggers this automatically on first use if nothing else is
+      configured.
+    - **Service account (servers / CI / headless):** create a service
+      account with Earth Engine access in the Cloud Console, download its
+      JSON key, and set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`
+      (or drop the file as `key.json` next to the package / repo root / cwd).
+4. **Set `GEE_PROJECT` once**, so you don't have to repeat it in every
+   `Config(...)`:
+   ```bash
+   export GEE_PROJECT=my-project-id
+   ```
+   (or pass it explicitly per run: `Config(GEE_PROJECT="my-project-id", ...)`).
+
+hydroflow tries credentials in this order: `GOOGLE_APPLICATION_CREDENTIALS` →
+a `key.json` next to the package/repo root/cwd → cached default credentials
+from a prior `earthengine authenticate` → the interactive flow as a last
+resort. `Config.validate()` errors early if a GEE-backed option is selected
+without `GEE_PROJECT` set, so offline runs never surprise you.
 
 ## No local DEM? Auto-download from Earth Engine
 

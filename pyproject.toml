@@ -51,6 +51,9 @@ dependencies = [
 gpu = ["cupy-cuda12x"]
 # Google Earth Engine features (IMERG rainfall, SERVES deficit, SoilGrids, LULC/LCZ)
 gee = ["earthengine-api"]
+# Interactive DEM_BOUNDS_WGS84 picker for Jupyter (see notebooks/pick_dem_bounds.ipynb).
+# Kept separate from [gee] so headless/script users aren't forced into ipywidgets/ipyleaflet.
+notebook = ["geemap", "ipyleaflet", "ipywidgets"]
 
 [project.scripts]
 hydroflow = "hydroflow.cli.main:main"

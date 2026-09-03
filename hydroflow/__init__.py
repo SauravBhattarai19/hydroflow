@@ -44,6 +44,8 @@ from .gee.dem_catalog import (
     list_dems as list_available_dems,
     describe_dems as describe_available_dems,
 )
+from .plotting import plot_hydrograph, plot_watershed, plot_raster, plot_mass_balance
+from .utils.terrain_rules import mannings_n_from_dem
 
 __all__ = [
     "Config",
@@ -52,5 +54,10 @@ __all__ = [
     "DEFAULT_STAGES",
     "list_available_dems",
     "describe_available_dems",
+    "plot_hydrograph",
+    "plot_watershed",
+    "plot_raster",
+    "plot_mass_balance",
+    "mannings_n_from_dem",
     "__version__",
 ]

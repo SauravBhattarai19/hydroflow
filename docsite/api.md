@@ -27,6 +27,37 @@ No `[gee]` install required just to list them.
     options:
       heading_level: 3
 
+## Plotting
+
+Small helpers to visualize a run's outputs — each accepts a path, a
+DataFrame, a `run_pipeline()` result dict, or a `Config`, and returns
+`(fig, ax)`. See [Examples](examples.md) for them in context.
+
+::: hydroflow.plot_watershed
+    options:
+      heading_level: 3
+
+::: hydroflow.plot_hydrograph
+    options:
+      heading_level: 3
+
+::: hydroflow.plot_raster
+    options:
+      heading_level: 3
+
+::: hydroflow.plot_mass_balance
+    options:
+      heading_level: 3
+
+## `mannings_n_from_dem`
+
+Generate a spatially-varying Manning's-n raster from a DEM using an elevation
+rule — see [Configuration → Elevation-based Manning's n](configuration.md#elevation-based-mannings-n).
+
+::: hydroflow.mannings_n_from_dem
+    options:
+      heading_level: 3
+
 ## `Config`
 
 The single configuration object for a run. `OpmConfig` is an alias of this

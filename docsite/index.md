@@ -14,7 +14,7 @@ forcing.
 
 ![Delineated watershed](assets/img/watershed.png){ loading=lazy }
 
-![Outlet hydrograph](assets/img/hydrograph.png){ loading=lazy }
+![Outlet hydrograph](assets/img/mannings_n_hydrograph.png){ loading=lazy }
 
 </div>
 
